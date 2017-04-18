@@ -44,18 +44,18 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.carrotsearch.randomizedtesting.annotations.ThreadLeakLingering;
-
 @Slow
 @SuppressSSL(bugUrl = "https://issues.apache.org/jira/browse/SOLR-5776")
-@ThreadLeakLingering(linger = 60000)
+//@ThreadLeakLingering(linger = 60000)
 @SuppressObjectReleaseTracker(bugUrl="Testing purposes")
 public class ChaosMonkeyNothingIsSafeTest extends AbstractFullDistribZkTestBase {
-  private static final int FAIL_TOLERANCE = 60;
+  private static final int FAIL_TOLERANCE = 100;
 
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
   
   private static final Integer RUN_LENGTH = Integer.parseInt(System.getProperty("solr.tests.cloud.cm.runlength", "-1"));
+
+  private final boolean onlyLeaderIndexes = random().nextBoolean();
 
   @BeforeClass
   public static void beforeSuperClass() {
@@ -109,6 +109,11 @@ public class ChaosMonkeyNothingIsSafeTest extends AbstractFullDistribZkTestBase 
     // None of the operations used here are particularly costly, so this should work.
     // Using this low timeout will also help us catch index stalling.
     clientSoTimeout = 5000;
+  }
+
+  @Override
+  protected int getRealtimeReplicas() {
+    return onlyLeaderIndexes? 1 : -1;
   }
 
   @Test
@@ -395,8 +400,8 @@ public class ChaosMonkeyNothingIsSafeTest extends AbstractFullDistribZkTestBase 
     SolrInputDocument doc = getDoc(fields);
     indexDoc(doc);
   }
-  
-  class ErrorLoggingConcurrentUpdateSolrClient extends ConcurrentUpdateSolrClient {
+
+  static class ErrorLoggingConcurrentUpdateSolrClient extends ConcurrentUpdateSolrClient {
     public ErrorLoggingConcurrentUpdateSolrClient(String serverUrl, HttpClient httpClient, int queueSize, int threadCount) {
       super(serverUrl, httpClient, queueSize, threadCount, null, false);
     }

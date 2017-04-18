@@ -939,7 +939,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     public int resetValue();
   }
 
-  class IntDesc implements IntComp {
+  static class IntDesc implements IntComp {
 
     public int resetValue() {
       return Integer.MIN_VALUE;
@@ -956,7 +956,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     }
   }
 
-  class IntAsc implements IntComp {
+  static class IntAsc implements IntComp {
 
     public int resetValue() {
       return Integer.MAX_VALUE;
@@ -1032,7 +1032,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     public long resetValue();
   }
 
-  class LongDesc implements LongComp {
+  static class LongDesc implements LongComp {
 
     public long resetValue() {
       return Long.MIN_VALUE;
@@ -1049,7 +1049,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     }
   }
 
-  class LongAsc implements LongComp {
+  static class LongAsc implements LongComp {
 
     public long resetValue() {
       return Long.MAX_VALUE;
@@ -1125,7 +1125,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     public float resetValue();
   }
 
-  public class FloatDesc implements FloatComp {
+  public static class FloatDesc implements FloatComp {
     public float resetValue() {
       return -Float.MAX_VALUE;
     }
@@ -1141,7 +1141,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     }
   }
 
-  public class FloatAsc implements FloatComp {
+  public static class FloatAsc implements FloatComp {
     public float resetValue() {
       return Float.MAX_VALUE;
     }
@@ -1219,7 +1219,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     public double resetValue();
   }
 
-  public class DoubleDesc implements DoubleComp {
+  public static class DoubleDesc implements DoubleComp {
     public double resetValue() {
       return -Double.MAX_VALUE;
     }
@@ -1235,7 +1235,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     }
   }
 
-  public class DoubleAsc implements DoubleComp {
+  public static class DoubleAsc implements DoubleComp {
     public double resetValue() {
       return Double.MAX_VALUE;
     }
@@ -1254,7 +1254,6 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
   class StringValue implements SortValue {
 
     protected SortedDocValues vals;
-    protected SortedDocValues segmentVals[];
 
     protected MultiDocValues.OrdinalMap ordinalMap;
     protected LongValues globalOrds;
@@ -1264,11 +1263,11 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     protected int segment;
     protected int currentOrd;
     protected IntComp comp;
+    protected int lastDocID;
 
     public StringValue(SortedDocValues vals, String field, IntComp comp)  {
       this.vals = vals;
       if(vals instanceof MultiDocValues.MultiSortedDocValues) {
-        this.segmentVals = ((MultiDocValues.MultiSortedDocValues) vals).values;
         this.ordinalMap = ((MultiDocValues.MultiSortedDocValues) vals).mapping;
       }
       this.field = field;
@@ -1281,6 +1280,13 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     }
 
     public void setCurrentValue(int docId) throws IOException {
+
+      if (docId < lastDocID) {
+        throw new AssertionError("docs were sent out-of-order: lastDocID=" + lastDocID + " vs doc=" + docId);
+      }
+
+      lastDocID = docId;
+
       if (docId > currentVals.docID()) {
         currentVals.advance(docId);
       }
@@ -1301,14 +1307,13 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
       this.currentOrd = v.currentOrd;
     }
 
-    public void setNextReader(LeafReaderContext context) {
+    public void setNextReader(LeafReaderContext context) throws IOException {
       segment = context.ord;
       if(ordinalMap != null) {
         globalOrds = ordinalMap.getGlobalOrds(segment);
-        currentVals = segmentVals[segment];
-      } else {
-        currentVals = vals;
       }
+      currentVals = DocValues.getSorted(context.reader(), field);
+      lastDocID = 0;
     }
 
     public void reset() {
@@ -1372,7 +1377,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
             while((o = vals.nextOrd()) != SortedSetDocValues.NO_MORE_ORDS) {
               BytesRef ref = vals.lookupOrd(o);
               fieldType.indexedToReadable(ref, cref);
-              IndexableField f = fieldType.createField(schemaField, cref.toString(), 1.0f);
+              IndexableField f = fieldType.createField(schemaField, cref.toString());
               if (f == null) w.add(cref.toString());
               else w.add(fieldType.toObject(f));
             }
@@ -1707,7 +1712,7 @@ public class ExportWriter implements SolrCore.RawWriter, Closeable {
     }
   }
 
-  public class IgnoreException extends IOException {
+  public static class IgnoreException extends IOException {
     public void printStackTrace(PrintWriter pw) {
       pw.print("Early Client Disconnect");
     }

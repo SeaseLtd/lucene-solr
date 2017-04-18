@@ -26,7 +26,6 @@ import org.apache.lucene.codecs.NormsProducer;
 import org.apache.lucene.codecs.PointsReader;
 import org.apache.lucene.codecs.StoredFieldsReader;
 import org.apache.lucene.codecs.TermVectorsReader;
-import org.apache.lucene.search.Sort;
 import org.apache.lucene.util.Bits;
 
 /**
@@ -113,13 +112,13 @@ public final class SlowCodecReaderWrapper {
         }
 
         @Override
-        public void addCoreClosedListener(CoreClosedListener listener) {
-          reader.addCoreClosedListener(listener);
+        public CacheHelper getCoreCacheHelper() {
+          return reader.getCoreCacheHelper();
         }
 
         @Override
-        public void removeCoreClosedListener(CoreClosedListener listener) {
-          reader.removeCoreClosedListener(listener);
+        public CacheHelper getReaderCacheHelper() {
+          return reader.getReaderCacheHelper();
         }
 
         @Override
@@ -128,8 +127,8 @@ public final class SlowCodecReaderWrapper {
         }
 
         @Override
-        public Sort getIndexSort() {
-          return reader.getIndexSort();
+        public LeafMetaData getMetaData() {
+          return reader.getMetaData();
         }
       };
     }

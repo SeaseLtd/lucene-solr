@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.lucene.legacy.LegacyFieldType;
-import org.apache.lucene.legacy.LegacyNumericType;
 import org.apache.lucene.spatial.vector.PointVectorStrategy;
 
 /**
@@ -80,14 +79,14 @@ public class SpatialPointVectorFieldType extends AbstractSpatialFieldType<PointV
   }
 
   @Override
-  public LegacyNumericType getNumericType() {
-    return LegacyNumericType.DOUBLE;
+  public NumberType getNumberType() {
+    return NumberType.DOUBLE;
   }
 
   @Override
   protected PointVectorStrategy newSpatialStrategy(String fieldName) {
     // TODO update to how BBoxField does things
-    if (this.getNumericType() != null) {
+    if (this.getNumberType() != null) {
       // create strategy based on legacy numerics
       // todo remove in 7.0
       LegacyFieldType fieldType = new LegacyFieldType(PointVectorStrategy.LEGACY_FIELDTYPE);

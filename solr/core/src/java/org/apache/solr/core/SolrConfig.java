@@ -58,6 +58,7 @@ import org.apache.lucene.index.IndexDeletionPolicy;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.util.Version;
 import org.apache.solr.client.solrj.io.stream.expr.Expressible;
+import org.apache.solr.cloud.RecoveryStrategy;
 import org.apache.solr.cloud.ZkSolrResourceLoader;
 import org.apache.solr.common.MapSerializable;
 import org.apache.solr.common.SolrException;
@@ -275,18 +276,12 @@ public class SolrConfig extends Config implements MapSerializable {
     hashSetInverseLoadFactor = 1.0f / getFloat("//HashDocSet/@loadFactor", 0.75f);
     hashDocSetMaxSize = getInt("//HashDocSet/@maxSize", 3000);
 
+    if (get("jmx", null) != null) {
+      log.warn("solrconfig.xml: <jmx> is no longer supported, use solr.xml:/metrics/reporter section instead");
+    }
+
     httpCachingConfig = new HttpCachingConfig(this);
 
-    Node jmx = getNode("jmx", false);
-    if (jmx != null) {
-      jmxConfig = new JmxConfiguration(true,
-          get("jmx/@agentId", null),
-          get("jmx/@serviceUrl", null),
-          get("jmx/@rootName", null));
-
-    } else {
-      jmxConfig = new JmxConfiguration(false, null, null, null);
-    }
     maxWarmingSearchers = getInt("query/maxWarmingSearchers", 1);
     slowQueryThresholdMillis = getInt("query/slowQueryThresholdMillis", -1);
     for (SolrPluginInfo plugin : plugins) loadPluginInfo(plugin);
@@ -357,6 +352,7 @@ public class SolrConfig extends Config implements MapSerializable {
       .add(new SolrPluginInfo(SolrEventListener.class, "//listener", REQUIRE_CLASS, MULTI_OK, REQUIRE_NAME_IN_OVERLAY))
 
       .add(new SolrPluginInfo(DirectoryFactory.class, "directoryFactory", REQUIRE_CLASS))
+      .add(new SolrPluginInfo(RecoveryStrategy.Builder.class, "recoveryStrategy"))
       .add(new SolrPluginInfo(IndexDeletionPolicy.class, "indexConfig/deletionPolicy", REQUIRE_CLASS))
       .add(new SolrPluginInfo(CodecFactory.class, "codecFactory", REQUIRE_CLASS))
       .add(new SolrPluginInfo(IndexReaderFactory.class, "indexReaderFactory", REQUIRE_CLASS))
@@ -508,46 +504,10 @@ public class SolrConfig extends Config implements MapSerializable {
   protected String dataDir;
   public final int slowQueryThresholdMillis;  // threshold above which a query is considered slow
 
-  //JMX configuration
-  public final JmxConfiguration jmxConfig;
-
   private final HttpCachingConfig httpCachingConfig;
 
   public HttpCachingConfig getHttpCachingConfig() {
     return httpCachingConfig;
-  }
-
-  public static class JmxConfiguration implements MapSerializable {
-    public boolean enabled = false;
-    public String agentId;
-    public String serviceUrl;
-    public String rootName;
-
-    public JmxConfiguration(boolean enabled,
-                            String agentId,
-                            String serviceUrl,
-                            String rootName) {
-      this.enabled = enabled;
-      this.agentId = agentId;
-      this.serviceUrl = serviceUrl;
-      this.rootName = rootName;
-
-      if (agentId != null && serviceUrl != null) {
-        throw new SolrException
-            (SolrException.ErrorCode.SERVER_ERROR,
-                "Incorrect JMX Configuration in solrconfig.xml, " +
-                    "both agentId and serviceUrl cannot be specified at the same time");
-      }
-
-    }
-
-    @Override
-    public Map<String, Object> toMap(Map<String, Object> map) {
-      map.put("agentId", agentId);
-      map.put("serviceUrl", serviceUrl);
-      map.put("rootName", rootName);
-      return map;
-    }
   }
 
   public static class HttpCachingConfig implements MapSerializable {
@@ -856,7 +816,6 @@ public class SolrConfig extends Config implements MapSerializable {
     m.put("queryResultMaxDocsCached", queryResultMaxDocsCached);
     m.put("enableLazyFieldLoading", enableLazyFieldLoading);
     m.put("maxBooleanClauses", booleanQueryMaxClauseCount);
-    if (jmxConfig != null) result.put("jmx", jmxConfig);
     for (SolrPluginInfo plugin : plugins) {
       List<PluginInfo> infos = getPluginInfos(plugin.clazz.getName());
       if (infos == null || infos.isEmpty()) continue;
@@ -882,7 +841,6 @@ public class SolrConfig extends Config implements MapSerializable {
 
 
     addCacheConfig(m, filterCacheConfig, queryResultCacheConfig, documentCacheConfig, fieldValueCacheConfig);
-    if (jmxConfig != null) result.put("jmx", jmxConfig);
     m = new LinkedHashMap();
     result.put("requestDispatcher", m);
     m.put("handleSelect", handleSelect);

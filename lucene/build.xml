@@ -56,6 +56,10 @@
   <target name="test" depends="-clover.load, -init-totals, test-core, test-test-framework, test-modules, -check-totals"
           description="Runs all unit tests (core, modules and back-compat)"
   />
+  <target name="test-nocompile">
+    <fail message="Target 'test-nocompile' will not run recursively.  First change directory to the module you want to test."/>
+  </target>
+
 
   <target name="pitest" depends="pitest-modules"
           description="Runs pitests (core, modules and back-compat)"
@@ -204,7 +208,7 @@
     <modules-crawl target="-ecj-javadoc-lint"/>
   </target>
 
-  <target name="process-webpages" depends="resolve-pegdown">
+  <target name="process-webpages" depends="resolve-markdown">
     <makeurl property="process-webpages.buildfiles" separator="|">
       <fileset dir="." includes="**/build.xml" excludes="build.xml,analysis/*,build/**,tools/**,site/**"/>
     </makeurl>
@@ -233,10 +237,10 @@
       <param name="defaultCodec" expression="${defaultCodec}"/>
     </xslt>
     
-    <pegdown todir="${javadoc.dir}">
+    <markdown todir="${javadoc.dir}">
       <fileset dir="." includes="MIGRATE.txt,JRE_VERSION_MIGRATION.txt,SYSTEM_REQUIREMENTS.txt"/>
       <globmapper from="*.txt" to="*.html"/>
-    </pegdown>
+    </markdown>
 
     <copy todir="${javadoc.dir}">
       <fileset dir="site/html"/>

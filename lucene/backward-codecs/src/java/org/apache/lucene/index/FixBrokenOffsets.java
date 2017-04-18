@@ -114,10 +114,23 @@ public class FixBrokenOffsets {
               }
             };
           }
+
+          @Override
+          public CacheHelper getCoreCacheHelper() {
+            return null;
+          }
+
+          @Override
+          public CacheHelper getReaderCacheHelper() {
+            return null;
+          }
         });
     }
 
     Directory destDir = FSDirectory.open(destPath);
+    // We need to maintain the same major version
+    int createdMajor = SegmentInfos.readLatestCommit(srcDir).getIndexCreatedVersionMajor();
+    new SegmentInfos(createdMajor).commit(destDir);
     IndexWriter writer = new IndexWriter(destDir, new IndexWriterConfig());
     writer.addIndexes(filtered);
     IOUtils.close(writer, reader, srcDir, destDir);

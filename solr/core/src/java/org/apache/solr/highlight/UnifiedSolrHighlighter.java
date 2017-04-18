@@ -28,12 +28,14 @@ import java.util.function.Predicate;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.postingshighlight.CustomSeparatorBreakIterator;
 import org.apache.lucene.search.postingshighlight.WholeBreakIterator;
 import org.apache.lucene.search.uhighlight.DefaultPassageFormatter;
 import org.apache.lucene.search.uhighlight.LengthGoalBreakIterator;
 import org.apache.lucene.search.uhighlight.PassageFormatter;
 import org.apache.lucene.search.uhighlight.PassageScorer;
 import org.apache.lucene.search.uhighlight.UnifiedHighlighter;
+import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.HighlightParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.common.util.NamedList;
@@ -62,8 +64,8 @@ import org.apache.solr.util.plugin.PluginInfoInitialized;
  * &lt;str name="hl.tag.post"&gt;&amp;lt;/em&amp;gt;&lt;/str&gt;
  * &lt;str name="hl.simple.pre"&gt;&amp;lt;em&amp;gt;&lt;/str&gt;
  * &lt;str name="hl.simple.post"&gt;&amp;lt;/em&amp;gt;&lt;/str&gt;
- * &lt;str name="hl.tag.ellipsis"&gt;... &lt;/str&gt;
- * &lt;bool name="hl.defaultSummary"&gt;true&lt;/bool&gt;
+ * &lt;str name="hl.tag.ellipsis"&gt;(internal/unspecified)&lt;/str&gt;
+ * &lt;bool name="hl.defaultSummary"&gt;false&lt;/bool&gt;
  * &lt;str name="hl.encoder"&gt;simple&lt;/str&gt;
  * &lt;float name="hl.score.k1"&gt;1.2&lt;/float&gt;
  * &lt;float name="hl.score.b"&gt;0.75&lt;/float&gt;
@@ -72,7 +74,7 @@ import org.apache.solr.util.plugin.PluginInfoInitialized;
  * &lt;str name="hl.bs.country"&gt;&lt;/str&gt;
  * &lt;str name="hl.bs.variant"&gt;&lt;/str&gt;
  * &lt;str name="hl.bs.type"&gt;SENTENCE&lt;/str&gt;
- * &lt;int name="hl.maxAnalyzedChars"&gt;10000&lt;/int&gt;
+ * &lt;int name="hl.maxAnalyzedChars"&gt;51200&lt;/int&gt;
  * &lt;bool name="hl.highlightMultiTerm"&gt;true&lt;/bool&gt;
  * &lt;bool name="hl.usePhraseHighlighter"&gt;true&lt;/bool&gt;
  * &lt;int name="hl.cacheFieldValCharsThreshold"&gt;524288&lt;/int&gt;
@@ -234,7 +236,7 @@ public class UnifiedSolrHighlighter extends SolrHighlighter implements PluginInf
       this.params = req.getParams();
       this.schema = req.getSchema();
       this.setMaxLength(
-          params.getInt(HighlightParams.MAX_CHARS, UnifiedHighlighter.DEFAULT_MAX_LENGTH));
+          params.getInt(HighlightParams.MAX_CHARS, DEFAULT_MAX_CHARS));
       this.setCacheFieldValCharsThreshold(
           params.getInt(HighlightParams.CACHE_FIELD_VAL_CHARS_THRESHOLD, DEFAULT_CACHE_CHARS_THRESHOLD));
 
@@ -298,22 +300,38 @@ public class UnifiedSolrHighlighter extends SolrHighlighter implements PluginInf
       // Use a default fragsize the same as the regex Fragmenter (original Highlighter) since we're
       //  both likely shooting for sentence-like patterns.
       int fragsize = params.getFieldInt(field, HighlightParams.FRAGSIZE, LuceneRegexFragmenter.DEFAULT_FRAGMENT_SIZE);
-      if (fragsize == 0) { // special value; no fragmenting
+      String type = params.getFieldParam(field, HighlightParams.BS_TYPE);
+      if (fragsize == 0 || "WHOLE".equals(type)) { // 0 is special value; no fragmenting
         return new WholeBreakIterator();
+      } else if ("SEPARATOR".equals(type)) {
+        char customSep = parseBiSepChar(params.getFieldParam(field, HighlightParams.BS_SEP));
+        return new CustomSeparatorBreakIterator(customSep);
       }
-
       String language = params.getFieldParam(field, HighlightParams.BS_LANGUAGE);
       String country = params.getFieldParam(field, HighlightParams.BS_COUNTRY);
       String variant = params.getFieldParam(field, HighlightParams.BS_VARIANT);
       Locale locale = parseLocale(language, country, variant);
-      String type = params.getFieldParam(field, HighlightParams.BS_TYPE);
       BreakIterator baseBI = parseBreakIterator(type, locale);
 
-      if (fragsize <= 1 || baseBI instanceof WholeBreakIterator) { // no real minimum size
+      if (fragsize <= 1) { // no real minimum size
         return baseBI;
       }
       return LengthGoalBreakIterator.createMinLength(baseBI, fragsize);
       // TODO option for using createClosestToLength()
+    }
+
+    /**
+     * parse custom separator char for {@link CustomSeparatorBreakIterator}
+     */
+    protected char parseBiSepChar(String sepChar) {
+      if (sepChar == null) {
+        throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, HighlightParams.BS_SEP + " not passed");
+      }
+      if (sepChar.length() != 1) {
+        throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, HighlightParams.BS_SEP +
+            " must be a single char but got: '" + sepChar + "'");
+      }
+      return sepChar.charAt(0);
     }
 
     /**
@@ -328,8 +346,6 @@ public class UnifiedSolrHighlighter extends SolrHighlighter implements PluginInf
         return BreakIterator.getWordInstance(locale);
       } else if ("CHARACTER".equals(type)) {
         return BreakIterator.getCharacterInstance(locale);
-      } else if ("WHOLE".equals(type)) {
-        return new WholeBreakIterator();
       } else {
         throw new IllegalArgumentException("Unknown " + HighlightParams.BS_TYPE + ": " + type);
       }

@@ -65,24 +65,24 @@ public class TestExternalFeatures extends TestRerankBase {
     assertJQ("/query" + query.toQueryString(), "/response/docs/[2]/id=='3'");
     assertJQ("/query" + query.toQueryString(), "/response/docs/[2]/score==1.0");
 
-    query.add("fl", "[fv]");
-    query.add("rq", "{!ltr reRankDocs=3 model=externalmodel efi.user_query=w3}");
+    query.remove("fl");
+    query.add("fl", "*,score,[fv]");
+    query.add("rq", "{!ltr reRankDocs=10 model=externalmodel efi.user_query=w3 efi.userTitlePhrase1=w4 efi.userTitlePhrase2=w5}");
 
     assertJQ("/query" + query.toQueryString(), "/response/docs/[0]/id=='3'");
-    assertJQ("/query" + query.toQueryString(), "/response/docs/[0]/score==0.999");
-    assertJQ("/query" + query.toQueryString(), "/response/docs/[1]/id=='1'");
+    assertJQ("/query" + query.toQueryString(), "/response/docs/[0]/score==0.7693934");
     assertJQ("/query" + query.toQueryString(), "/response/docs/[1]/score==0.0");
-    assertJQ("/query" + query.toQueryString(), "/response/docs/[2]/id=='2'");
     assertJQ("/query" + query.toQueryString(), "/response/docs/[2]/score==0.0");
 
     // Adding an efi in the transformer should not affect the rq ranking with a
     // different value for efi of the same parameter
     query.remove("fl");
-    query.add("fl", "id,[fv efi.user_query=w2]");
+    query.add("fl", "*,score,[fv efi.user_query=w2 efi.userTitlePhrase1=w4 efi.userTitlePhrase2=w5]");
 
     assertJQ("/query" + query.toQueryString(), "/response/docs/[0]/id=='3'");
-    assertJQ("/query" + query.toQueryString(), "/response/docs/[1]/id=='1'");
-    assertJQ("/query" + query.toQueryString(), "/response/docs/[2]/id=='2'");
+    assertJQ("/query" + query.toQueryString(), "/response/docs/[0]/score==0.7693934");
+    assertJQ("/query" + query.toQueryString(), "/response/docs/[1]/score==0.0");
+    assertJQ("/query" + query.toQueryString(), "/response/docs/[2]/score==0.0");
   }
 
   @Test
@@ -92,11 +92,12 @@ public class TestExternalFeatures extends TestRerankBase {
     query.add("fl", "*,score,fv:[fv]");
     query.add("rows", "1");
     // Stopword only query passed in
-    query.add("rq", "{!ltr reRankDocs=3 model=externalmodel efi.user_query='a'}");
+    query.add("rq", "{!ltr reRankDocs=10 model=externalmodel efi.user_query='a' efi.userTitlePhrase1='b' efi.userTitlePhrase2='c'}");
 
     final String docs0fv_dense_csv = FeatureLoggerTestUtils.toFeatureVector(
         "matchedTitle","0.0",
-        "titlePhraseMatch","0.0");
+        "titlePhraseMatch","0.0",
+        "titlePhrasesMatch","0.0");
     final String docs0fv_sparse_csv = FeatureLoggerTestUtils.toFeatureVector();
 
     final String docs0fv_default_csv = chooseDefaultFeatureVector(docs0fv_dense_csv, docs0fv_sparse_csv);
@@ -112,7 +113,7 @@ public class TestExternalFeatures extends TestRerankBase {
     query.add("rows", "1");
 
     final String docs0fv_csv = FeatureLoggerTestUtils.toFeatureVector(
-        "confidence","2.3", "originalScore","1.0");
+        "occurrences","2.3", "originalScore","1.0");
 
     // Features we're extracting depend on external feature info not passed in
     query.add("fl", "[fv]");
@@ -120,13 +121,13 @@ public class TestExternalFeatures extends TestRerankBase {
 
     // Adding efi in features section should make it work
     query.remove("fl");
-    query.add("fl", "score,fvalias:[fv store=fstore2 efi.myconf=2.3]");
+    query.add("fl", "score,fvalias:[fv store=fstore3 efi.myOcc=2.3]");
     assertJQ("/query" + query.toQueryString(), "/response/docs/[0]/fvalias=='"+docs0fv_csv+"'");
 
-    // Adding efi in transformer + rq should still use the transformer's params for feature extraction
+    // Adding efi in transformer + rq should still returns features
     query.remove("fl");
-    query.add("fl", "score,fvalias:[fv store=fstore2 efi.myconf=2.3]");
-    query.add("rq", "{!ltr reRankDocs=3 model=externalmodel efi.user_query=w3}");
+    query.add("fl", "score,fvalias:[fv store=fstore3 efi.myOcc=2.3]");
+    query.add("rq", "{!ltr reRankDocs=10 model=externalmodel efi.user_query=w3}");
     assertJQ("/query" + query.toQueryString(), "/response/docs/[0]/fvalias=='"+docs0fv_csv+"'");
   }
 
@@ -137,7 +138,7 @@ public class TestExternalFeatures extends TestRerankBase {
     query.add("rows", "1");
 
     final String docs0fvalias_dense_csv = FeatureLoggerTestUtils.toFeatureVector(
-        "confidence","0.0",
+        "occurrences","0.0",
         "originalScore","0.0");
     final String docs0fvalias_sparse_csv = FeatureLoggerTestUtils.toFeatureVector(
         "originalScore","0.0");
@@ -146,7 +147,7 @@ public class TestExternalFeatures extends TestRerankBase {
 
     // Efi is explicitly not required, so we do not score the feature
     query.remove("fl");
-    query.add("fl", "fvalias:[fv store=fstore2]");
+    query.add("fl", "fvalias:[fv store=fstore3]");
     assertJQ("/query" + query.toQueryString(), "/response/docs/[0]/fvalias=='"+docs0fvalias_default_csv+"'");
   }
 
@@ -181,4 +182,20 @@ public class TestExternalFeatures extends TestRerankBase {
     query.add("fl", "fvalias:[fv store=fstore4]");
     assertJQ("/query" + query.toQueryString(), "/error/msg=='Exception from createWeight for ValueFeature [name=popularity, params={value=${myPop}, required=true}] ValueFeatureWeight requires efi parameter that was not passed in request.'");
   }
+
+  @Test
+  public void featureExtraction_valueFeatureRequiredInFq_shouldThrowException() throws Exception {
+    final String userTitlePhrase1 = "userTitlePhrase1";
+    final String userTitlePhrase2 = "userTitlePhrase2";
+    final String userTitlePhrasePresent = (random().nextBoolean() ? userTitlePhrase1 : userTitlePhrase2);
+
+    final SolrQuery query = new SolrQuery();
+    query.setQuery("*:*");
+    query.add("rows", "1");
+    query.add("fl", "score,features:[fv efi.user_query=uq "+userTitlePhrasePresent+"=utpp]");
+    assertJQ("/query" + query.toQueryString(), "/error/msg=='Exception from createWeight for "
+        + "SolrFeature [name=titlePhrasesMatch, params={fq=[{!field f=title}${"+userTitlePhrase1+"}, {!field f=title}${"+userTitlePhrase2+"}]}] "
+        + "SolrFeatureWeight requires efi parameter that was not passed in request.'");
+  }
+
 }

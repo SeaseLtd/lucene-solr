@@ -60,9 +60,9 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.exec.DefaultExecuteResultHandler;
 import org.apache.commons.exec.DefaultExecutor;
+import org.apache.commons.exec.ExecuteException;
 import org.apache.commons.exec.Executor;
 import org.apache.commons.exec.OS;
 import org.apache.commons.exec.environment.EnvironmentUtils;
@@ -80,7 +80,6 @@ import org.apache.http.client.methods.HttpHead;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.conn.ConnectTimeoutException;
 import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.message.BasicHeader;
 import org.apache.http.util.EntityUtils;
 import org.apache.lucene.util.Version;
 import org.apache.solr.client.solrj.SolrClient;
@@ -90,7 +89,6 @@ import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.impl.HttpClientUtil;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient.Builder;
-import org.apache.solr.client.solrj.impl.SolrHttpClientBuilder;
 import org.apache.solr.client.solrj.impl.ZkClientClusterStateProvider;
 import org.apache.solr.client.solrj.request.ContentStreamUpdateRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
@@ -106,7 +104,6 @@ import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.util.ContentStreamBase;
 import org.apache.solr.common.util.NamedList;
-import org.apache.solr.common.util.StrUtils;
 import org.noggit.CharArr;
 import org.noggit.JSONParser;
 import org.noggit.JSONWriter;
@@ -117,6 +114,7 @@ import org.slf4j.LoggerFactory;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.solr.common.SolrException.ErrorCode.FORBIDDEN;
 import static org.apache.solr.common.SolrException.ErrorCode.UNAUTHORIZED;
+import static org.apache.solr.common.params.CommonParams.DISTRIB;
 import static org.apache.solr.common.params.CommonParams.NAME;
 
 /**
@@ -153,7 +151,6 @@ public class SolrCLI {
 
       int toolExitStatus = 0;
       try {
-        setBasicAuth();
         runImpl(cli);
       } catch (Exception exc) {
         // since this is a CLI, spare the user the stacktrace
@@ -261,20 +258,6 @@ public class SolrCLI {
   }
 
   public static CommandLine parseCmdLine(String[] args, Option[] toolOptions) throws Exception {
-
-    String builderClassName = System.getProperty("solr.authentication.httpclient.builder");
-    if (builderClassName!=null) {
-      try {
-        Class c = Class.forName(builderClassName);
-        SolrHttpClientBuilder builder = (SolrHttpClientBuilder)c.newInstance();
-        HttpClientUtil.setHttpClientBuilder(builder);
-        log.info("Set SolrHttpClientBuilder from: "+builderClassName);
-      } catch (Exception ex) {
-        log.error(ex.getMessage());
-        throw new RuntimeException("Error during loading of builder '"+builderClassName+"'.", ex);
-      }
-    }
-
     // the parser doesn't like -D props
     List<String> toolArgList = new ArrayList<String>();
     List<String> dashDList = new ArrayList<String>();
@@ -531,25 +514,6 @@ public class SolrCLI {
     return classes;
   }
 
-  /**
-   * Inspects system property basicauth and enables authentication for HttpClient
-   * @throws Exception if the basicauth SysProp has wrong format
-   */
-  protected static void setBasicAuth() throws Exception {
-    String basicauth = System.getProperty("basicauth", null);
-    if (basicauth != null) {
-      List<String> ss = StrUtils.splitSmart(basicauth, ':');
-      if (ss.size() != 2)
-        throw new Exception("Please provide 'basicauth' in the 'user:password' format");
-
-      HttpClientUtil.addRequestInterceptor((httpRequest, httpContext) -> {
-        String pair = ss.get(0) + ":" + ss.get(1);
-        byte[] encodedBytes = Base64.encodeBase64(pair.getBytes(UTF_8));
-        httpRequest.addHeader(new BasicHeader("Authorization", "Basic " + new String(encodedBytes, UTF_8)));
-      });
-    }
-  }
-  
   /**
    * Determine if a request to Solr failed due to a communication error,
    * which is generally retry-able. 
@@ -1231,7 +1195,7 @@ public class SolrCLI {
             // query this replica directly to get doc count and assess health
             q = new SolrQuery("*:*");
             q.setRows(0);
-            q.set("distrib", "false");
+            q.set(DISTRIB, "false");
             try (HttpSolrClient solr = new HttpSolrClient.Builder(coreUrl).build()) {
 
               String solrUrl = solr.getBaseURL();
@@ -2965,18 +2929,25 @@ public class SolrCLI {
             }
           }
         }
-        executor.execute(org.apache.commons.exec.CommandLine.parse(startCmd), startEnv, new DefaultExecuteResultHandler());
+        DefaultExecuteResultHandler handler = new DefaultExecuteResultHandler();
+        executor.execute(org.apache.commons.exec.CommandLine.parse(startCmd), startEnv, handler);
 
-        // brief wait before proceeding on Windows
+        // wait for execution.
         try {
-          Thread.sleep(3000);
+          handler.waitFor(3000);
         } catch (InterruptedException ie) {
           // safe to ignore ...
           Thread.interrupted();
         }
-
+        if (handler.hasResult() && handler.getExitValue() != 0) {
+          throw new Exception("Failed to start Solr using command: "+startCmd+" Exception : "+handler.getException());
+        }
       } else {
-        code = executor.execute(org.apache.commons.exec.CommandLine.parse(startCmd));
+        try {
+          code = executor.execute(org.apache.commons.exec.CommandLine.parse(startCmd));
+        } catch(ExecuteException e){
+          throw new Exception("Failed to start Solr using command: "+startCmd+" Exception : "+ e);
+        }
       }
       if (code != 0)
         throw new Exception("Failed to start Solr using command: "+startCmd);
@@ -3341,7 +3312,6 @@ public class SolrCLI {
 
       int toolExitStatus = 0;
       try {
-        setBasicAuth();
         toolExitStatus = runAssert(cli);
       } catch (Exception exc) {
         // since this is a CLI, spare the user the stacktrace

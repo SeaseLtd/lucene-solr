@@ -24,7 +24,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.codahale.metrics.Counter;
-import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.Timer;
 import org.apache.lucene.codecs.Codec;
@@ -40,7 +39,7 @@ import org.apache.solr.common.util.SuppressForbidden;
 import org.apache.solr.core.DirectoryFactory;
 import org.apache.solr.core.DirectoryFactory.DirContext;
 import org.apache.solr.core.SolrCore;
-import org.apache.solr.core.SolrInfoMBean;
+import org.apache.solr.core.SolrInfoBean;
 import org.apache.solr.metrics.SolrMetricManager;
 import org.apache.solr.schema.IndexSchema;
 import org.slf4j.Logger;
@@ -61,6 +60,7 @@ public class SolrIndexWriter extends IndexWriter {
   /** Stored into each Lucene commit to record the
    *  System.currentTimeMillis() when commit was called. */
   public static final String COMMIT_TIME_MSEC_KEY = "commitTimeMSec";
+  public static final String COMMIT_COMMAND_VERSION = "commitCommandVer";
 
   private final Object CLOSE_LOCK = new Object();
   
@@ -71,25 +71,20 @@ public class SolrIndexWriter extends IndexWriter {
 
   // metrics
   private long majorMergeDocs = 512 * 1024;
-  private final Timer majorMerge;
-  private final Timer minorMerge;
-  private final Meter majorMergedDocs;
-  private final Meter majorDeletedDocs;
-  private final Counter mergeErrors;
-  private final Meter flushMeter; // original counter is package-private in IndexWriter
-  private final boolean mergeDetails;
+  private Timer majorMerge;
+  private Timer minorMerge;
+  private Meter majorMergedDocs;
+  private Meter majorDeletedDocs;
+  private Counter mergeErrors;
+  private Meter flushMeter; // original counter is package-private in IndexWriter
+  private boolean mergeTotals = false;
+  private boolean mergeDetails = false;
   private final AtomicInteger runningMajorMerges = new AtomicInteger();
-  private final Gauge<Integer> runningMajorMergesGauge;
   private final AtomicInteger runningMinorMerges = new AtomicInteger();
-  private final Gauge<Integer> runningMinorMergesGauge;
   private final AtomicInteger runningMajorMergesSegments = new AtomicInteger();
-  private final Gauge<Integer> runningMajorMergesSegmentsGauge;
   private final AtomicInteger runningMinorMergesSegments = new AtomicInteger();
-  private final Gauge<Integer> runningMinorMergesSegmentsGauge;
   private final AtomicLong runningMajorMergesDocs = new AtomicLong();
-  private final Gauge<Long> runningMajorMergesDocsGauge;
   private final AtomicLong runningMinorMergesDocs = new AtomicLong();
-  private final Gauge<Long> runningMinorMergesDocsGauge;
 
   public static SolrIndexWriter create(SolrCore core, String name, String path, DirectoryFactory directoryFactory, boolean create, IndexSchema schema, SolrIndexConfig config, IndexDeletionPolicy delPolicy, Codec codec) throws IOException {
 
@@ -116,18 +111,7 @@ public class SolrIndexWriter extends IndexWriter {
     numOpens.incrementAndGet();
     log.debug("Opened Writer " + name);
     // no metrics
-    minorMerge = null;
-    majorMerge = null;
-    mergeErrors = null;
-    majorMergedDocs = null;
-    majorDeletedDocs = null;
-    runningMinorMergesGauge = null;
-    runningMinorMergesDocsGauge = null;
-    runningMinorMergesSegmentsGauge = null;
-    runningMajorMergesGauge = null;
-    runningMajorMergesDocsGauge = null;
-    runningMajorMergesSegmentsGauge = null;
-    flushMeter = null;
+    mergeTotals = false;
     mergeDetails = false;
   }
 
@@ -142,24 +126,8 @@ public class SolrIndexWriter extends IndexWriter {
     infoStream = getConfig().getInfoStream();
     this.directory = directory;
     numOpens.incrementAndGet();
-    SolrMetricManager metricManager = core.getCoreDescriptor().getCoreContainer().getMetricManager();
+    SolrMetricManager metricManager = core.getCoreContainer().getMetricManager();
     String registry = core.getCoreMetricManager().getRegistryName();
-    minorMerge = metricManager.timer(registry, "minor", SolrInfoMBean.Category.INDEX.toString(), "merge");
-    majorMerge = metricManager.timer(registry, "major", SolrInfoMBean.Category.INDEX.toString(), "merge");
-    mergeErrors = metricManager.counter(registry, "errors", SolrInfoMBean.Category.INDEX.toString(), "merge");
-    runningMajorMergesGauge = () -> runningMajorMerges.get();
-    runningMinorMergesGauge = () -> runningMinorMerges.get();
-    runningMajorMergesDocsGauge = () -> runningMajorMergesDocs.get();
-    runningMinorMergesDocsGauge = () -> runningMinorMergesDocs.get();
-    runningMajorMergesSegmentsGauge = () -> runningMajorMergesSegments.get();
-    runningMinorMergesSegmentsGauge = () -> runningMinorMergesSegments.get();
-    metricManager.register(registry, runningMajorMergesGauge, true, "running", SolrInfoMBean.Category.INDEX.toString(), "merge", "major");
-    metricManager.register(registry, runningMinorMergesGauge, true, "running", SolrInfoMBean.Category.INDEX.toString(), "merge", "minor");
-    metricManager.register(registry, runningMajorMergesDocsGauge, true, "running.docs", SolrInfoMBean.Category.INDEX.toString(), "merge", "major");
-    metricManager.register(registry, runningMinorMergesDocsGauge, true, "running.docs", SolrInfoMBean.Category.INDEX.toString(), "merge", "minor");
-    metricManager.register(registry, runningMajorMergesSegmentsGauge, true, "running.segments", SolrInfoMBean.Category.INDEX.toString(), "merge", "major");
-    metricManager.register(registry, runningMinorMergesSegmentsGauge, true, "running.segments", SolrInfoMBean.Category.INDEX.toString(), "merge", "minor");
-    flushMeter = metricManager.meter(registry, "flush", SolrInfoMBean.Category.INDEX.toString());
     if (config.metricsInfo != null && config.metricsInfo.initArgs != null) {
       Object v = config.metricsInfo.initArgs.get("majorMergeDocs");
       if (v != null) {
@@ -169,32 +137,45 @@ public class SolrIndexWriter extends IndexWriter {
           log.warn("Invalid 'majorMergeDocs' argument, using default 512k", e);
         }
       }
+      Boolean Totals = config.metricsInfo.initArgs.getBooleanArg("merge");
       Boolean Details = config.metricsInfo.initArgs.getBooleanArg("mergeDetails");
       if (Details != null) {
         mergeDetails = Details;
       } else {
         mergeDetails = false;
       }
-      if (mergeDetails) {
-        majorMergedDocs = metricManager.meter(registry, "docs", SolrInfoMBean.Category.INDEX.toString(), "merge", "major");
-        majorDeletedDocs = metricManager.meter(registry, "deletedDocs", SolrInfoMBean.Category.INDEX.toString(), "merge", "major");
+      if (Totals != null) {
+        mergeTotals = Totals;
       } else {
-        majorMergedDocs = null;
-        majorDeletedDocs = null;
+        mergeTotals = false;
       }
-    } else {
-      mergeDetails = false;
-      majorMergedDocs = null;
-      majorDeletedDocs = null;
+      if (mergeDetails) {
+        mergeTotals = true; // override
+        majorMergedDocs = metricManager.meter(null, registry, "docs", SolrInfoBean.Category.INDEX.toString(), "merge", "major");
+        majorDeletedDocs = metricManager.meter(null, registry, "deletedDocs", SolrInfoBean.Category.INDEX.toString(), "merge", "major");
+      }
+      if (mergeTotals) {
+        minorMerge = metricManager.timer(null, registry, "minor", SolrInfoBean.Category.INDEX.toString(), "merge");
+        majorMerge = metricManager.timer(null, registry, "major", SolrInfoBean.Category.INDEX.toString(), "merge");
+        mergeErrors = metricManager.counter(null, registry, "errors", SolrInfoBean.Category.INDEX.toString(), "merge");
+        metricManager.registerGauge(null, registry, () -> runningMajorMerges.get(), true, "running", SolrInfoBean.Category.INDEX.toString(), "merge", "major");
+        metricManager.registerGauge(null, registry, () -> runningMinorMerges.get(), true, "running", SolrInfoBean.Category.INDEX.toString(), "merge", "minor");
+        metricManager.registerGauge(null, registry, () -> runningMajorMergesDocs.get(), true, "running.docs", SolrInfoBean.Category.INDEX.toString(), "merge", "major");
+        metricManager.registerGauge(null, registry, () -> runningMinorMergesDocs.get(), true, "running.docs", SolrInfoBean.Category.INDEX.toString(), "merge", "minor");
+        metricManager.registerGauge(null, registry, () -> runningMajorMergesSegments.get(), true, "running.segments", SolrInfoBean.Category.INDEX.toString(), "merge", "major");
+        metricManager.registerGauge(null, registry, () -> runningMinorMergesSegments.get(), true, "running.segments", SolrInfoBean.Category.INDEX.toString(), "merge", "minor");
+        flushMeter = metricManager.meter(null, registry, "flush", SolrInfoBean.Category.INDEX.toString());
+      }
     }
   }
 
   @SuppressForbidden(reason = "Need currentTimeMillis, commit time should be used only for debugging purposes, " +
       " but currently suspiciously used for replication as well")
-  public static void setCommitData(IndexWriter iw) {
-    log.info("Calling setCommitData with IW:" + iw.toString());
+  public static void setCommitData(IndexWriter iw, long commitCommandVersion) {
+    log.info("Calling setCommitData with IW:" + iw.toString() + " commitCommandVersion:"+commitCommandVersion);
     final Map<String,String> commitData = new HashMap<>();
     commitData.put(COMMIT_TIME_MSEC_KEY, String.valueOf(System.currentTimeMillis()));
+    commitData.put(COMMIT_COMMAND_VERSION, String.valueOf(commitCommandVersion));
     iw.setLiveCommitData(commitData.entrySet());
   }
 
@@ -205,6 +186,10 @@ public class SolrIndexWriter extends IndexWriter {
   // we override this method to collect metrics for merges.
   @Override
   public void merge(MergePolicy.OneMerge merge) throws IOException {
+    if (!mergeTotals) {
+      super.merge(merge);
+      return;
+    }
     long deletedDocs = 0;
     long totalNumDocs = merge.totalNumDocs();
     for (SegmentCommitInfo info : merge.segments) {
@@ -251,7 +236,7 @@ public class SolrIndexWriter extends IndexWriter {
   @Override
   protected void doAfterFlush() throws IOException {
     if (flushMeter != null) { // this is null when writer is used only for snapshot cleanup
-      flushMeter.mark();
+      flushMeter.mark();      // or if mergeTotals == false
     }
     super.doAfterFlush();
   }

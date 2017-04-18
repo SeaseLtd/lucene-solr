@@ -16,7 +16,6 @@
  */
 package org.apache.lucene.index;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
@@ -78,10 +77,11 @@ public class TestFixBrokenOffsets extends LuceneTestCase {
     MockDirectoryWrapper tmpDir = newMockDirectory();
     tmpDir.setCheckIndexOnClose(false);
     IndexWriter w = new IndexWriter(tmpDir, new IndexWriterConfig());
-    w.addIndexes(dir);
+    IndexWriter finalW = w;
+    IllegalArgumentException e = expectThrows(IllegalArgumentException.class, () -> finalW.addIndexes(dir));
+    assertTrue(e.getMessage(), e.getMessage().startsWith("Cannot use addIndexes(Directory) with indexes that have been created by a different Lucene version."));
     w.close();
-    // OK: addIndexes(Directory...) also keeps version as 6.3.0, so offsets not checked:
-    TestUtil.checkIndex(tmpDir);
+    // OK: addIndexes(Directory...) refuses to execute if the index creation version is different so broken offsets are not carried over
     tmpDir.close();
 
     final MockDirectoryWrapper tmpDir2 = newMockDirectory();
@@ -93,14 +93,11 @@ public class TestFixBrokenOffsets extends LuceneTestCase {
     for(int i=0;i<leaves.size();i++) {
       codecReaders[i] = (CodecReader) leaves.get(i).reader();
     }
-    w.addIndexes(codecReaders);
+    IndexWriter finalW2 = w;
+    e = expectThrows(IllegalArgumentException.class, () -> finalW2.addIndexes(codecReaders));
+    assertEquals("Cannot merge a segment that has been created with major version 6 into this index which has been created by major version 7", e.getMessage());
     reader.close();
     w.close();
-
-    // NOT OK: broken offsets were copied into a 7.0 segment:
-    ByteArrayOutputStream output = new ByteArrayOutputStream(1024);    
-    RuntimeException re = expectThrows(RuntimeException.class, () -> {TestUtil.checkIndex(tmpDir2, false, true, output);});
-    assertEquals("term [66 6f 6f]: doc 0: pos 1: startOffset 7 < lastStartOffset 10; consider using the FixBrokenOffsets tool in Lucene's backward-codecs module to correct your index", re.getMessage());
     tmpDir2.close();
 
     // Now run the tool and confirm the broken offsets are fixed:

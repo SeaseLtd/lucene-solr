@@ -119,9 +119,7 @@ class FacetRangeProcessor extends FacetProcessor<FacetRange> {
     final FieldType ft = sf.getType();
 
     if (ft instanceof TrieField) {
-      final TrieField trie = (TrieField)ft;
-
-      switch (trie.getType()) {
+      switch (ft.getNumberType()) {
         case FLOAT:
           calc = new FloatCalc(sf);
           break;
@@ -143,9 +141,8 @@ class FacetRangeProcessor extends FacetProcessor<FacetRange> {
                   "Expected numeric field type :" + sf);
       }
     } else if (ft instanceof PointField) {
-      final PointField pfield = (PointField)ft;
-
-      switch (pfield.getType()) {
+      // TODO, this is the same in Trie and Point now
+      switch (ft.getNumberType()) {
         case FLOAT:
           calc = new FloatCalc(sf);
           break;
@@ -179,9 +176,7 @@ class FacetRangeProcessor extends FacetProcessor<FacetRange> {
     final FieldType ft = sf.getType();
 
     if (ft instanceof TrieField) {
-      final TrieField trie = (TrieField)ft;
-
-      switch (trie.getType()) {
+      switch (ft.getNumberType()) {
         case FLOAT:
           calc = new FloatCalc(sf);
           break;
@@ -355,7 +350,7 @@ class FacetRangeProcessor extends FacetProcessor<FacetRange> {
     if (freq.getSubFacets().size() > 0) {
       DocSet subBase = intersections[slot];
       try {
-        processSubs(bucket, filters[slot], subBase);
+        processSubs(bucket, filters[slot], subBase, false, null);
       } finally {
         // subContext.base.decref();  // OFF-HEAP
         // subContext.base = null;  // do not modify context after creation... there may be deferred execution (i.e. streaming)
@@ -372,7 +367,7 @@ class FacetRangeProcessor extends FacetProcessor<FacetRange> {
     }
 
     Query rangeQ = sf.getType().getRangeQuery(null, sf, range.low == null ? null : calc.formatValue(range.low), range.high==null ? null : calc.formatValue(range.high), range.includeLower, range.includeUpper);
-    fillBucket(bucket, rangeQ, null);
+    fillBucket(bucket, rangeQ, null, false, null);
 
     return bucket;
   }
@@ -504,7 +499,7 @@ class FacetRangeProcessor extends FacetProcessor<FacetRange> {
     }
     @Override
     public Float parseAndAddGap(Comparable value, String gap) {
-      return new Float(((Number)value).floatValue() + Float.valueOf(gap).floatValue());
+      return new Float(((Number)value).floatValue() + Float.parseFloat(gap));
     }
   }
   private static class DoubleCalc extends Calc {
@@ -525,7 +520,7 @@ class FacetRangeProcessor extends FacetProcessor<FacetRange> {
     }
     @Override
     public Double parseAndAddGap(Comparable value, String gap) {
-      return new Double(((Number)value).doubleValue() + Double.valueOf(gap).doubleValue());
+      return new Double(((Number)value).doubleValue() + Double.parseDouble(gap));
     }
   }
   private static class IntCalc extends Calc {
@@ -537,7 +532,7 @@ class FacetRangeProcessor extends FacetProcessor<FacetRange> {
     }
     @Override
     public Integer parseAndAddGap(Comparable value, String gap) {
-      return new Integer(((Number)value).intValue() + Integer.valueOf(gap).intValue());
+      return new Integer(((Number)value).intValue() + Integer.parseInt(gap));
     }
   }
   private static class LongCalc extends Calc {
@@ -549,7 +544,7 @@ class FacetRangeProcessor extends FacetProcessor<FacetRange> {
     }
     @Override
     public Long parseAndAddGap(Comparable value, String gap) {
-      return new Long(((Number)value).longValue() + Long.valueOf(gap).longValue());
+      return new Long(((Number)value).longValue() + Long.parseLong(gap));
     }
   }
   private static class DateCalc extends Calc {

@@ -535,13 +535,6 @@ public class TestGroupingSearch extends SolrTestCaseJ4 {
       ,"/facet_counts/facet_fields/"+f+"==['1',3, '2',3, '3',2, '4',1, '5',1]"
     );
 
-    // test that grouping works with highlighting
-    assertJQ(req("fq",filt,  "q","{!func}"+f2, "group","true", "group.field",f, "fl","id"
-                 ,"hl","true", "hl.fl",f)
-      ,"/grouped/"+f+"/matches==10"
-      ,"/highlighting=={'_ORDERED_':'', '8':{},'3':{},'4':{},'1':{},'2':{}}"
-    );
-
     // test that grouping works with debugging
     assertJQ(req("fq",filt,  "q","{!func}"+f2, "group","true", "group.field",f, "fl","id"
                  ,"debugQuery","true")
@@ -845,7 +838,7 @@ public class TestGroupingSearch extends SolrTestCaseJ4 {
         Object realResponse = ObjectBuilder.fromJSON(strResponse);
         String err = JSONTestUtil.matchObj("/grouped/" + groupField, realResponse, modelResponse);
         if (err != null) {
-          log.error("GROUPING MISMATCH: " + err
+          log.error("GROUPING MISMATCH (" + queryIter + "): " + err
            + "\n\trequest="+req
            + "\n\tresult="+strResponse
            + "\n\texpected="+ JSONUtil.toJSON(modelResponse)
@@ -861,7 +854,7 @@ public class TestGroupingSearch extends SolrTestCaseJ4 {
         // assert post / pre grouping facets
         err = JSONTestUtil.matchObj("/facet_counts/facet_fields/"+FOO_STRING_FIELD, realResponse, expectedFacetResponse);
         if (err != null) {
-          log.error("GROUPING MISMATCH: " + err
+          log.error("GROUPING MISMATCH (" + queryIter + "): " + err
            + "\n\trequest="+req
            + "\n\tresult="+strResponse
            + "\n\texpected="+ JSONUtil.toJSON(expectedFacetResponse)

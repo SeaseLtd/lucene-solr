@@ -17,6 +17,7 @@
 package org.apache.solr.client.solrj.io.stream;
 
 import java.io.IOException;
+import java.sql.Array;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -43,6 +44,8 @@ import org.apache.solr.client.solrj.io.stream.expr.StreamExpressionNamedParamete
 import org.apache.solr.client.solrj.io.stream.expr.StreamExpressionParameter;
 import org.apache.solr.client.solrj.io.stream.expr.StreamExpressionValue;
 import org.apache.solr.client.solrj.io.stream.expr.StreamFactory;
+
+import static org.apache.solr.common.params.CommonParams.SORT;
 
 /**
  * Connects to a datasource using a registered JDBC driver and execute a query. The results of
@@ -88,6 +91,7 @@ public class JDBCStream extends TupleStream implements Expressible {
   private ResultSetValueSelector[] valueSelectors;
   protected ResultSet resultSet;
   protected transient StreamContext streamContext;
+  protected String sep = Character.toString((char)31);
 
   public JDBCStream(String connectionUrl, String sqlQuery, StreamComparator definedSort) throws IOException {
     this(connectionUrl, sqlQuery, definedSort, null, null);
@@ -102,7 +106,7 @@ public class JDBCStream extends TupleStream implements Expressible {
     List<StreamExpressionNamedParameter> namedParams = factory.getNamedOperands(expression);
     StreamExpressionNamedParameter connectionUrlExpression = factory.getNamedOperand(expression, "connection");
     StreamExpressionNamedParameter sqlQueryExpression = factory.getNamedOperand(expression, "sql");
-    StreamExpressionNamedParameter definedSortExpression = factory.getNamedOperand(expression, "sort");
+    StreamExpressionNamedParameter definedSortExpression = factory.getNamedOperand(expression, SORT);
     StreamExpressionNamedParameter driverClassNameExpression = factory.getNamedOperand(expression, "driver");
     
     // Validate there are no unknown parameters - zkHost and alias are namedParameter so we don't need to count it twice
@@ -113,7 +117,7 @@ public class JDBCStream extends TupleStream implements Expressible {
     // All named params we don't care about will be passed to the driver on connection
     Properties connectionProperties = new Properties();
     for(StreamExpressionNamedParameter namedParam : namedParams){
-      if(!namedParam.getName().equals("driver") && !namedParam.getName().equals("connection") && !namedParam.getName().equals("sql") && !namedParam.getName().equals("sort")){
+      if(!namedParam.getName().equals("driver") && !namedParam.getName().equals("connection") && !namedParam.getName().equals("sql") && !namedParam.getName().equals(SORT)){
         connectionProperties.put(namedParam.getName(), namedParam.getParameter().toString().trim());
       }
     }
@@ -209,8 +213,8 @@ public class JDBCStream extends TupleStream implements Expressible {
     try{
       resultSet = statement.executeQuery(sqlQuery);
     } catch (SQLException e) {
-      throw new IOException(String.format(Locale.ROOT, "Failed to execute sqlQuery '%s' against JDBC connection '%s'",
-          sqlQuery, connectionUrl), e);
+      throw new IOException(String.format(Locale.ROOT, "Failed to execute sqlQuery '%s' against JDBC connection '%s'.\n"
+          + e.getMessage(), sqlQuery, connectionUrl), e);
     }
     
     try{
@@ -226,18 +230,25 @@ public class JDBCStream extends TupleStream implements Expressible {
     ResultSetValueSelector[] valueSelectors = new ResultSetValueSelector[metadata.getColumnCount()];
     
     for(int columnIdx = 0; columnIdx < metadata.getColumnCount(); ++columnIdx){
-      
       final int columnNumber = columnIdx + 1; // cause it starts at 1
       // Use getColumnLabel instead of getColumnName to make sure fields renamed with AS as picked up properly
       final String columnName = metadata.getColumnLabel(columnNumber);
       String className = metadata.getColumnClassName(columnNumber);
       String typeName = metadata.getColumnTypeName(columnNumber);
-            
+      
       if(directSupportedTypes.contains(className)){
         valueSelectors[columnIdx] = new ResultSetValueSelector() {
           public Object selectValue(ResultSet resultSet) throws SQLException {
             Object obj = resultSet.getObject(columnNumber);
             if(resultSet.wasNull()){ return null; }
+            if(obj instanceof String) {
+              String s = (String)obj;
+              if(s.indexOf(sep) > -1) {
+                s = s.substring(1);
+                return s.split(sep);
+              }
+            }
+
             return obj;
           }
           public String getColumnName() {
@@ -272,6 +283,22 @@ public class JDBCStream extends TupleStream implements Expressible {
             Float obj = resultSet.getFloat(columnNumber);
             if(resultSet.wasNull()){ return null; }
             return obj.doubleValue();
+          }
+          public String getColumnName() {
+            return columnName;
+          }
+        };
+      } else if(Array.class.getName().equals(className)) {
+        valueSelectors[columnIdx] = new ResultSetValueSelector() {
+          public Object selectValue(ResultSet resultSet) throws SQLException {
+            Object o = resultSet.getObject(columnNumber);
+            if(resultSet.wasNull()){ return null; }
+            if(o instanceof Array) {
+              Array array = (Array)o;
+              return array.getArray();
+            } else {
+              return o;
+            }
           }
           public String getColumnName() {
             return columnName;
@@ -342,7 +369,7 @@ public class JDBCStream extends TupleStream implements Expressible {
     expression.addParameter(new StreamExpressionNamedParameter("sql", sqlQuery));
     
     // sort
-    expression.addParameter(new StreamExpressionNamedParameter("sort", definedSort.toExpression(factory)));
+    expression.addParameter(new StreamExpressionNamedParameter(SORT, definedSort.toExpression(factory)));
     
     // driver class
     if(null != driverClassName){

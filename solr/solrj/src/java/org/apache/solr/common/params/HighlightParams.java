@@ -63,10 +63,11 @@ public interface HighlightParams {
   public static final String BS_LANGUAGE = HIGHLIGHT+".bs.language"; // FVH, UH, PH
   public static final String BS_COUNTRY  = HIGHLIGHT+".bs.country"; // FVH, UH, PH
   public static final String BS_VARIANT  = HIGHLIGHT+".bs.variant"; // FVH, UH, PH
+  public static final String BS_SEP      = HIGHLIGHT+".bs.separator"; // UH, PH
 
   // formatting
   public static final String FORMATTER   = HIGHLIGHT+".formatter"; // OH
-  public static final String ENCODER     = HIGHLIGHT+".encoder"; // OH, (UH, PH limited)
+  public static final String ENCODER     = HIGHLIGHT+".encoder"; // all
   public static final String MERGE_CONTIGUOUS_FRAGMENTS = HIGHLIGHT + ".mergeContiguous"; // OH
   public static final String SIMPLE      = "simple"; // OH
   public static final String SIMPLE_PRE  = HIGHLIGHT+"."+SIMPLE+".pre"; // OH

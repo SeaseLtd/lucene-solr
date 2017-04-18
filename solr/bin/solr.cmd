@@ -117,12 +117,43 @@ IF DEFINED SOLR_SSL_KEY_STORE (
 )
 
 REM Authentication options
+
+IF NOT DEFINED SOLR_AUTH_TYPE (
+  IF DEFINED SOLR_AUTHENTICATION_OPTS (
+    echo WARNING: SOLR_AUTHENTICATION_OPTS variable configured without associated SOLR_AUTH_TYPE variable
+    echo          Please configure SOLR_AUTH_TYPE variable with the authentication type to be used.
+    echo          Currently supported authentication types are [kerberos, basic]
+  )
+)
+
+IF DEFINED SOLR_AUTH_TYPE (
+  IF DEFINED SOLR_AUTHENTICATION_CLIENT_BUILDER (
+    echo WARNING: SOLR_AUTHENTICATION_CLIENT_BUILDER and SOLR_AUTH_TYPE variables are configured together
+    echo          Use SOLR_AUTH_TYPE variable to configure authentication type to be used
+    echo          Currently supported authentication types are [kerberos, basic]
+    echo          The value of SOLR_AUTHENTICATION_CLIENT_BUILDER configuration variable will be ignored
+  )
+)
+
+IF DEFINED SOLR_AUTH_TYPE (
+  IF /I "%SOLR_AUTH_TYPE%" == "basic" (
+    set SOLR_AUTHENTICATION_CLIENT_BUILDER="org.apache.solr.client.solrj.impl.PreemptiveBasicAuthClientBuilderFactory"
+  ) ELSE (
+    IF /I "%SOLR_AUTH_TYPE%" == "kerberos" (
+      set SOLR_AUTHENTICATION_CLIENT_BUILDER="org.apache.solr.client.solrj.impl.PreemptiveBasicAuthClientBuilderFactory"
+    ) ELSE (
+      echo ERROR: Value specified for SOLR_AUTH_TYPE configuration variable is invalid.
+      goto err
+    )
+  )
+)
+
 IF DEFINED SOLR_AUTHENTICATION_CLIENT_CONFIGURER (
   echo WARNING: Found unsupported configuration variable SOLR_AUTHENTICATION_CLIENT_CONFIGURER
-  echo          Please start using SOLR_AUTHENTICATION_CLIENT_BUILDER instead
+  echo          Please start using SOLR_AUTH_TYPE instead
 )
 IF DEFINED SOLR_AUTHENTICATION_CLIENT_BUILDER (
-  set AUTHC_CLIENT_BUILDER_ARG="-Dsolr.authentication.httpclient.builder=%SOLR_AUTHENTICATION_CLIENT_BUILDER%"
+  set AUTHC_CLIENT_BUILDER_ARG="-Dsolr.httpclient.builder.factory=%SOLR_AUTHENTICATION_CLIENT_BUILDER%"
 )
 set "AUTHC_OPTS=%AUTHC_CLIENT_BUILDER_ARG% %SOLR_AUTHENTICATION_OPTS%"
 
@@ -448,23 +479,32 @@ echo.
 echo.             ^<src^>, ^<dest^> : [file:][/]path/to/local/file or zk:/path/to/zk/node
 echo                              NOTE: ^<src^> and ^<dest^> may both be Zookeeper resources prefixed by 'zk:'
 echo             When ^<src^> is a zk resource, ^<dest^> may be '.'
-echo             If ^<dest^> ends with '/', then ^<dest^> will be a local folder or parent znode and the last
-echo             element of the ^<src^> path will be appended.
+echo             element of the ^<src^> path will be appended unless ^<src^> also ends in a slash. 
+echo             ^<dest^> may be zk:, which may be useful when using the cp -r form to backup/restore 
+echo              the entire zk state.
+echo              You must enclose local paths that end in a wildcard in quotes or just
+echo              end the local path in a slash. That is,
+echo              'bin/solr zk cp -r /some/dir/ zk:/ -z localhost:2181' is equivalent to
+echo              'bin/solr zk cp -r ^"/some/dir/*^" zk:/ -z localhost:2181'
+echo              but 'bin/solr zk cp -r /some/dir/* zk:/ -z localhost:2181' will throw an error
+echo .
+echo              here's an example of backup/restore for a ZK configuration:
+echo              to copy to local: 'bin/solr zk cp -r zk:/ /some/dir -z localhost:2181'
+echo              to restore to ZK: 'bin/solr zk cp -r /some/dir/ zk:/ -z localhost:2181'
 echo.
-echo             The 'file:' prefix is stripped, thus 'file:/' specifies an absolute local path and
-echo             'file:somewhere' specifies a relative local path. All paths on Zookeeper are absolute
-echo             so the slash is required.
+echo             The 'file:' prefix is stripped, thus 'file:/wherever' specifies an absolute local path and
+echo             'file:somewhere' specifies a relative local path. All paths on Zookeeper are absolute.
 echo.
 echo             Zookeeper nodes CAN have data, so moving a single file to a parent znode
 echo             will overlay the data on the parent Znode so specifying the trailing slash
-echo             is important.
+echo             can be important.
 echo.
-echo             Wildcards are not supported
+echo             Wildcards are supported when copying from local, trailing only and must be quoted.
 echo.
 echo         rm deletes files or folders on Zookeeper
 echo             -r     Recursively delete if ^<path^> is a directory. Command will fail if ^<path^>
 echo                    has children and -r is not specified. Optional
-echo             ^<path^> : [zk:]/path/to/zk/node. ^<path^> may not be the root ('/')"
+echo             ^<path^> : [zk:]/path/to/zk/node. ^<path^> may not be the root ('/')
 echo.
 echo         mv moves (renames) znodes on Zookeeper
 echo             ^<src^>, ^<dest^> : Zookeeper nodes, the 'zk:' prefix is optional.
@@ -481,7 +521,7 @@ echo.
 echo             Only the node names are listed, not data
 echo.
 echo         mkroot makes a znode in Zookeeper with no data. Can be used to make a path of arbitrary
-echo                depth but primarily intended to create a 'chroot'."
+echo                depth but primarily intended to create a 'chroot'.
 echo.
 echo             ^<path^>: The Zookeeper path to create. Leading slash is assumed if not present.
 echo                       Intermediate nodes are created as needed if not present.
@@ -1154,7 +1194,7 @@ for /f "usebackq" %%i in (`dir /b "%SOLR_TIP%\bin" ^| findstr /i "^solr-.*\.port
           @echo.
           set has_info=1
           echo Found Solr process %%k running on port !SOME_SOLR_PORT!
-          "%JAVA%" %SOLR_SSL_OPTS% %AUTHC_OPTS% %SOLR_ZK_CREDS_AND_ACLS% -Dsolr.install.dir="%SOLR_TIP%" ^ 
+          "%JAVA%" %SOLR_SSL_OPTS% %AUTHC_OPTS% %SOLR_ZK_CREDS_AND_ACLS% -Dsolr.install.dir="%SOLR_TIP%" ^
             -Dlog4j.configuration="file:%DEFAULT_SERVER_DIR%\scripts\cloud-scripts\log4j.properties" ^
             -classpath "%DEFAULT_SERVER_DIR%\solr-webapp\webapp\WEB-INF\lib\*;%DEFAULT_SERVER_DIR%\lib\ext\*" ^
             org.apache.solr.util.SolrCLI status -solr !SOLR_URL_SCHEME!://%SOLR_TOOL_HOST%:!SOME_SOLR_PORT!/solr
@@ -1194,7 +1234,7 @@ goto parse_healthcheck_args
 :run_healthcheck
 IF NOT DEFINED HEALTHCHECK_COLLECTION goto healthcheck_usage
 IF NOT DEFINED HEALTHCHECK_ZK_HOST set "HEALTHCHECK_ZK_HOST=localhost:9983"
-"%JAVA%" %SOLR_SSL_OPTS% %AUTHC_OPTS% %SOLR_ZK_CREDS_AND_ACLS% -Dsolr.install.dir="%SOLR_TIP%" ^ 
+"%JAVA%" %SOLR_SSL_OPTS% %AUTHC_OPTS% %SOLR_ZK_CREDS_AND_ACLS% -Dsolr.install.dir="%SOLR_TIP%" ^
   -Dlog4j.configuration="file:%DEFAULT_SERVER_DIR%\scripts\cloud-scripts\log4j.properties" ^
   -classpath "%DEFAULT_SERVER_DIR%\solr-webapp\webapp\WEB-INF\lib\*;%DEFAULT_SERVER_DIR%\lib\ext\*" ^
   org.apache.solr.util.SolrCLI healthcheck -collection !HEALTHCHECK_COLLECTION! -zkHost !HEALTHCHECK_ZK_HOST!
@@ -1388,7 +1428,7 @@ if "!DELETE_CONFIG!"=="" (
   set DELETE_CONFIG=true
 )
 
-"%JAVA%" %SOLR_SSL_OPTS% %AUTHC_OPTS% %SOLR_ZK_CREDS_AND_ACLS% -Dsolr.install.dir="%SOLR_TIP%" ^ 
+"%JAVA%" %SOLR_SSL_OPTS% %AUTHC_OPTS% %SOLR_ZK_CREDS_AND_ACLS% -Dsolr.install.dir="%SOLR_TIP%" ^
 -Dlog4j.configuration="file:%DEFAULT_SERVER_DIR%\scripts\cloud-scripts\log4j.properties" ^
 -classpath "%DEFAULT_SERVER_DIR%\solr-webapp\webapp\WEB-INF\lib\*;%DEFAULT_SERVER_DIR%\lib\ext\*" ^
 org.apache.solr.util.SolrCLI delete -name !DELETE_NAME! -deleteConfig !DELETE_CONFIG! ^

@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.invoke.MethodHandles;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -49,6 +48,7 @@ import org.apache.lucene.search.grouping.GroupDocs;
 import org.apache.lucene.search.grouping.SearchGroup;
 import org.apache.lucene.search.grouping.TopGroups;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.BytesRefBuilder;
 import org.apache.lucene.util.InPlaceMergeSorter;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.common.SolrDocument;
@@ -259,7 +259,6 @@ public class QueryComponent extends SearchComponent
     //TODO: move weighting of sort
     final SortSpec groupSortSpec = searcher.weightSortSpec(sortSpec, Sort.RELEVANCE);
 
-    // groupSort defaults to sort
     String withinGroupSortStr = params.get(GroupParams.GROUP_SORT);
     //TODO: move weighting of sort
     final SortSpec withinGroupSortSpec;
@@ -446,7 +445,9 @@ public class QueryComponent extends SearchComponent
             for (String topGroup : topGroupsParam) {
               SearchGroup<BytesRef> searchGroup = new SearchGroup<>();
               if (!topGroup.equals(TopGroupsShardRequestFactory.GROUP_NULL_VALUE)) {
-                searchGroup.groupValue = new BytesRef(schemaField.getType().readableToIndexed(topGroup));
+                BytesRefBuilder builder = new BytesRefBuilder();
+                schemaField.getType().readableToIndexed(topGroup, builder);
+                searchGroup.groupValue = builder.get();
               }
               topGroups.add(searchGroup);
             }
@@ -1376,7 +1377,7 @@ public class QueryComponent extends SearchComponent
   }
 
   /////////////////////////////////////////////
-  ///  SolrInfoMBean
+  ///  SolrInfoBean
   ////////////////////////////////////////////
 
   @Override
@@ -1387,11 +1388,6 @@ public class QueryComponent extends SearchComponent
   @Override
   public Category getCategory() {
     return Category.QUERY;
-  }
-
-  @Override
-  public URL[] getDocs() {
-    return null;
   }
 
   /**

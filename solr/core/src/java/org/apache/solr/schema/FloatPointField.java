@@ -17,24 +17,23 @@
 
 package org.apache.solr.schema;
 
-import java.lang.invoke.MethodHandles;
 import java.util.Collection;
 
 import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.DocValuesType;
 import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.legacy.LegacyNumericType;
 import org.apache.lucene.queries.function.ValueSource;
 import org.apache.lucene.queries.function.valuesource.FloatFieldSource;
+import org.apache.lucene.queries.function.valuesource.MultiValuedFloatFieldSource;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.SortedNumericSelector;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
+import org.apache.lucene.util.NumericUtils;
 import org.apache.solr.search.QParser;
 import org.apache.solr.uninverting.UninvertingReader.Type;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * {@code PointField} implementation for {@code Float} values.
@@ -42,8 +41,6 @@ import org.slf4j.LoggerFactory;
  * @see FloatPoint
  */
 public class FloatPointField extends PointField implements FloatValueFieldType {
-
-  private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
   public FloatPointField() {
     type = NumberType.FLOAT;
@@ -91,7 +88,9 @@ public class FloatPointField extends PointField implements FloatValueFieldType {
     if (val != null) {
       if (f.fieldType().stored() == false && f.fieldType().docValuesType() == DocValuesType.NUMERIC) {
         return Float.intBitsToFloat(val.intValue());
-      } else {
+      } else if (f.fieldType().stored() == false && f.fieldType().docValuesType() == DocValuesType.SORTED_NUMERIC) {
+        return NumericUtils.sortableIntToFloat(val.intValue());
+      } else  {
         return val;
       }
     } else {
@@ -107,6 +106,9 @@ public class FloatPointField extends PointField implements FloatValueFieldType {
   @Override
   public Query getSetQuery(QParser parser, SchemaField field, Collection<String> externalVal) {
     assert externalVal.size() > 0;
+    if (!field.indexed()) {
+      return super.getSetQuery(parser, field, externalVal);
+    }
     float[] values = new float[externalVal.size()];
     int i = 0;
     for (String val:externalVal) {
@@ -149,8 +151,7 @@ public class FloatPointField extends PointField implements FloatValueFieldType {
   @Override
   public Type getUninversionType(SchemaField sf) {
     if (sf.multiValued()) {
-      throw new UnsupportedOperationException("MultiValued Point fields with DocValues is not currently supported");
-//      return Type.SORTED_FLOAT;
+      return Type.SORTED_FLOAT;
     } else {
       return Type.FLOAT_POINT;
     }
@@ -161,20 +162,14 @@ public class FloatPointField extends PointField implements FloatValueFieldType {
     field.checkFieldCacheSource();
     return new FloatFieldSource(field.getName());
   }
-
+  
   @Override
-  public LegacyNumericType getNumericType() {
-    // TODO: refactor this to not use LegacyNumericType
-    return LegacyNumericType.FLOAT;
+  protected ValueSource getSingleValueSource(SortedNumericSelector.Type choice, SchemaField f) {
+    return new MultiValuedFloatFieldSource(f.getName(), choice);
   }
 
   @Override
-  public IndexableField createField(SchemaField field, Object value, float boost) {
-    if (!isFieldUsed(field)) return null;
-
-    if (boost != 1.0 && log.isTraceEnabled()) {
-      log.trace("Can't use document/field boost for PointField. Field: " + field.getName() + ", boost: " + boost);
-    }
+  public IndexableField createField(SchemaField field, Object value) {
     float floatValue = (value instanceof Number) ? ((Number) value).floatValue() : Float.parseFloat(value.toString());
     return new FloatPoint(field.getName(), floatValue);
   }

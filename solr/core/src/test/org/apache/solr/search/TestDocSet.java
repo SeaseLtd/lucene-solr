@@ -25,6 +25,7 @@ import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.index.Fields;
+import org.apache.lucene.index.LeafMetaData;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexReaderContext;
 import org.apache.lucene.index.LeafReader;
@@ -38,11 +39,11 @@ import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.search.DocIdSet;
 import org.apache.lucene.search.DocIdSetIterator;
-import org.apache.lucene.search.Sort;
 import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.util.Version;
 
 /**
  *
@@ -388,16 +389,6 @@ public class TestDocSet extends LuceneTestCase {
       }
 
       @Override
-      public void addCoreClosedListener(CoreClosedListener listener) {
-        throw new UnsupportedOperationException();
-      }
-
-      @Override
-      public void removeCoreClosedListener(CoreClosedListener listener) {
-        throw new UnsupportedOperationException();
-      }
-
-      @Override
       public FieldInfos getFieldInfos() {
         return new FieldInfos(new FieldInfo[0]);
       }
@@ -465,7 +456,17 @@ public class TestDocSet extends LuceneTestCase {
       }
 
       @Override
-      public Sort getIndexSort() {
+      public LeafMetaData getMetaData() {
+        return new LeafMetaData(Version.LATEST.major, Version.LATEST, null);
+      }
+
+      @Override
+      public CacheHelper getCoreCacheHelper() {
+        return null;
+      }
+
+      @Override
+      public CacheHelper getReaderCacheHelper() {
         return null;
       }
     };

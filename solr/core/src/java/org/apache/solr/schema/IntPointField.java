@@ -17,23 +17,21 @@
 
 package org.apache.solr.schema;
 
-import java.lang.invoke.MethodHandles;
 import java.util.Collection;
 
 import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.legacy.LegacyNumericType;
 import org.apache.lucene.queries.function.ValueSource;
 import org.apache.lucene.queries.function.valuesource.IntFieldSource;
+import org.apache.lucene.queries.function.valuesource.MultiValuedIntFieldSource;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.SortedNumericSelector;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.apache.solr.search.QParser;
 import org.apache.solr.uninverting.UninvertingReader.Type;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * {@code PointField} implementation for {@code Integer} values.
@@ -41,8 +39,6 @@ import org.slf4j.LoggerFactory;
  * @see IntPoint
  */
 public class IntPointField extends PointField implements IntValueFieldType {
-
-  private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
   public IntPointField() {
     type = NumberType.INTEGER;
@@ -107,6 +103,9 @@ public class IntPointField extends PointField implements IntValueFieldType {
   @Override
   public Query getSetQuery(QParser parser, SchemaField field, Collection<String> externalVal) {
     assert externalVal.size() > 0;
+    if (!field.indexed()) {
+      return super.getSetQuery(parser, field, externalVal);
+    }
     int[] values = new int[externalVal.size()];
     int i = 0;
     for (String val:externalVal) {
@@ -149,8 +148,7 @@ public class IntPointField extends PointField implements IntValueFieldType {
   @Override
   public Type getUninversionType(SchemaField sf) {
     if (sf.multiValued()) {
-      throw new UnsupportedOperationException("MultiValued Point fields with DocValues is not currently supported");
-//      return Type.SORTED_INTEGER;
+      return Type.SORTED_INTEGER;
     } else {
       return Type.INTEGER_POINT;
     }
@@ -163,17 +161,7 @@ public class IntPointField extends PointField implements IntValueFieldType {
   }
 
   @Override
-  public LegacyNumericType getNumericType() {
-    return LegacyNumericType.INT;
-  }
-
-  @Override
-  public IndexableField createField(SchemaField field, Object value, float boost) {
-    if (!isFieldUsed(field)) return null;
-
-    if (boost != 1.0 && log.isTraceEnabled()) {
-      log.trace("Can't use document/field boost for PointField. Field: " + field.getName() + ", boost: " + boost);
-    }
+  public IndexableField createField(SchemaField field, Object value) {
     int intValue = (value instanceof Number) ? ((Number) value).intValue() : Integer.parseInt(value.toString());
     return new IntPoint(field.getName(), intValue);
   }
@@ -181,6 +169,11 @@ public class IntPointField extends PointField implements IntValueFieldType {
   @Override
   protected StoredField getStoredField(SchemaField sf, Object value) {
     return new StoredField(sf.getName(), (Integer) this.toNativeType(value));
+  }
+  
+  @Override
+  protected ValueSource getSingleValueSource(SortedNumericSelector.Type choice, SchemaField f) {
+    return new MultiValuedIntFieldSource(f.getName(), choice);
   }
 
 }

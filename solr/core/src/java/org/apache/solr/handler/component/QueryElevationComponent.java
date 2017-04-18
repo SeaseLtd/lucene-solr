@@ -24,8 +24,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.invoke.MethodHandles;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -91,6 +89,8 @@ import org.slf4j.LoggerFactory;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
+
+import static org.apache.solr.common.params.CommonParams.ID;
 
 /**
  * A component to elevate some documents to the top of the result set.
@@ -217,7 +217,7 @@ public class QueryElevationComponent extends SearchComponent implements SolrCore
         boolean exists = false;
 
         // check if using ZooKeeper
-        ZkController zkController = core.getCoreDescriptor().getCoreContainer().getZkController();
+        ZkController zkController = core.getCoreContainer().getZkController();
         if (zkController != null) {
           // TODO : shouldn't have to keep reading the config name when it has been read before
           exists = zkController.configFileExists(zkController.getZkStateReader().readConfigName(core.getCoreDescriptor().getCloudDescriptor().getCollectionName()), f);
@@ -272,7 +272,7 @@ public class QueryElevationComponent extends SearchComponent implements SolrCore
         
         Config cfg;
         
-        ZkController zkController = core.getCoreDescriptor().getCoreContainer().getZkController();
+        ZkController zkController = core.getCoreContainer().getZkController();
         if (zkController != null) {
           cfg = new Config(core.getResourceLoader(), f, null, null);
         } else {
@@ -308,7 +308,7 @@ public class QueryElevationComponent extends SearchComponent implements SolrCore
       ArrayList<String> exclude = new ArrayList<>();
       for (int j = 0; j < children.getLength(); j++) {
         Node child = children.item(j);
-        String id = DOMUtil.getAttr(child, "id", "missing 'id'");
+        String id = DOMUtil.getAttr(child, ID, "missing 'id'");
         String e = DOMUtil.getAttr(child, EXCLUDE, null);
         if (e != null) {
           if (Boolean.valueOf(e)) {
@@ -595,7 +595,7 @@ public class QueryElevationComponent extends SearchComponent implements SolrCore
   }
 
   //---------------------------------------------------------------------------------
-  // SolrInfoMBean
+  // SolrInfoBean
   //---------------------------------------------------------------------------------
 
   @Override
@@ -603,16 +603,6 @@ public class QueryElevationComponent extends SearchComponent implements SolrCore
     return "Query Boosting -- boost particular documents for a given query";
   }
 
-  @Override
-  public URL[] getDocs() {
-    try {
-      return new URL[]{
-          new URL("http://wiki.apache.org/solr/QueryElevationComponent")
-      };
-    } catch (MalformedURLException e) {
-      throw new RuntimeException(e);
-    }
-  }
   class ElevationComparatorSource extends FieldComparatorSource {
   private QueryElevationComponent.ElevationObj elevations;
   private SentinelIntSet ordSet; //the key half of the map

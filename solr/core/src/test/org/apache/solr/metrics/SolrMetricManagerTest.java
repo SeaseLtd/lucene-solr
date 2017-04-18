@@ -29,7 +29,7 @@ import org.apache.lucene.util.TestUtil;
 import org.apache.solr.SolrTestCaseJ4;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.core.PluginInfo;
-import org.apache.solr.core.SolrInfoMBean;
+import org.apache.solr.core.SolrInfoBean;
 import org.apache.solr.core.SolrResourceLoader;
 import org.apache.solr.metrics.reporters.MockMetricReporter;
 import org.junit.Test;
@@ -51,27 +51,28 @@ public class SolrMetricManagerTest extends SolrTestCaseJ4 {
   }
 
   @Test
-  public void testMoveMetrics() throws Exception {
+  public void testSwapRegistries() throws Exception {
     Random r = random();
 
     SolrMetricManager metricManager = new SolrMetricManager();
 
     Map<String, Counter> metrics1 = SolrMetricTestUtils.getRandomMetrics(r, true);
     Map<String, Counter> metrics2 = SolrMetricTestUtils.getRandomMetrics(r, true);
-    String fromName = TestUtil.randomSimpleString(r, 1, 10);
-    String toName = TestUtil.randomSimpleString(r, 1, 10);
+    String fromName = "from-" + TestUtil.randomSimpleString(r, 1, 10);
+    String toName = "to-" + TestUtil.randomSimpleString(r, 1, 10);
     // register test metrics
     for (Map.Entry<String, Counter> entry : metrics1.entrySet()) {
-      metricManager.register(fromName, entry.getValue(), false, entry.getKey(), "metrics1");
+      metricManager.register(null, fromName, entry.getValue(), false, entry.getKey(), "metrics1");
     }
     for (Map.Entry<String, Counter> entry : metrics2.entrySet()) {
-      metricManager.register(fromName, entry.getValue(), false, entry.getKey(), "metrics2");
+      metricManager.register(null, toName, entry.getValue(), false, entry.getKey(), "metrics2");
     }
-    assertEquals(metrics1.size() + metrics2.size(), metricManager.registry(fromName).getMetrics().size());
+    assertEquals(metrics1.size(), metricManager.registry(fromName).getMetrics().size());
+    assertEquals(metrics2.size(), metricManager.registry(toName).getMetrics().size());
 
-    // move metrics1
-    metricManager.moveMetrics(fromName, toName, new SolrMetricManager.PrefixFilter("metrics1"));
-    // check the remaining metrics
+    // swap
+    metricManager.swapRegistries(fromName, toName);
+    // check metrics
     Map<String, Metric> fromMetrics = metricManager.registry(fromName).getMetrics();
     assertEquals(metrics2.size(), fromMetrics.size());
     for (Map.Entry<String, Counter> entry : metrics2.entrySet()) {
@@ -79,7 +80,6 @@ public class SolrMetricManagerTest extends SolrTestCaseJ4 {
       assertNotNull(value);
       assertEquals(entry.getValue(), value);
     }
-    // check the moved metrics
     Map<String, Metric> toMetrics = metricManager.registry(toName).getMetrics();
     assertEquals(metrics1.size(), toMetrics.size());
     for (Map.Entry<String, Counter> entry : metrics1.entrySet()) {
@@ -87,13 +87,6 @@ public class SolrMetricManagerTest extends SolrTestCaseJ4 {
       assertNotNull(value);
       assertEquals(entry.getValue(), value);
     }
-
-    // move all remaining metrics
-    metricManager.moveMetrics(fromName, toName, null);
-    fromMetrics = metricManager.registry(fromName).getMetrics();
-    assertEquals(0, fromMetrics.size());
-    toMetrics = metricManager.registry(toName).getMetrics();
-    assertEquals(metrics1.size() + metrics2.size(), toMetrics.size());
   }
 
   @Test
@@ -132,13 +125,13 @@ public class SolrMetricManagerTest extends SolrTestCaseJ4 {
     String registryName = TestUtil.randomSimpleString(r, 1, 10);
 
     for (Map.Entry<String, Counter> entry : metrics.entrySet()) {
-      metricManager.register(registryName, entry.getValue(), false, entry.getKey(), "foo", "bar");
+      metricManager.register(null, registryName, entry.getValue(), false, entry.getKey(), "foo", "bar");
     }
     for (Map.Entry<String, Counter> entry : metrics.entrySet()) {
-      metricManager.register(registryName, entry.getValue(), false, entry.getKey(), "foo", "baz");
+      metricManager.register(null, registryName, entry.getValue(), false, entry.getKey(), "foo", "baz");
     }
     for (Map.Entry<String, Counter> entry : metrics.entrySet()) {
-      metricManager.register(registryName, entry.getValue(), false, entry.getKey(), "foo");
+      metricManager.register(null, registryName, entry.getValue(), false, entry.getKey(), "foo");
     }
 
     assertEquals(metrics.size() * 3, metricManager.registry(registryName).getMetrics().size());
@@ -170,10 +163,10 @@ public class SolrMetricManagerTest extends SolrTestCaseJ4 {
 
     String registryName = TestUtil.randomSimpleString(r, 1, 10);
 
-    metricManager.counter(registryName, "simple_counter", "foo", "bar");
-    metricManager.timer(registryName, "simple_timer", "foo", "bar");
-    metricManager.meter(registryName, "simple_meter", "foo", "bar");
-    metricManager.histogram(registryName, "simple_histogram", "foo", "bar");
+    metricManager.counter(null, registryName, "simple_counter", "foo", "bar");
+    metricManager.timer(null, registryName, "simple_timer", "foo", "bar");
+    metricManager.meter(null, registryName, "simple_meter", "foo", "bar");
+    metricManager.histogram(null, registryName, "simple_histogram", "foo", "bar");
     Map<String, Metric> metrics = metricManager.registry(registryName).getMetrics();
     assertEquals(4, metrics.size());
     for (Map.Entry<String, Metric> entry : metrics.entrySet()) {
@@ -187,13 +180,13 @@ public class SolrMetricManagerTest extends SolrTestCaseJ4 {
 
     String name = TestUtil.randomSimpleString(r, 1, 10);
 
-    String result = SolrMetricManager.getRegistryName(SolrInfoMBean.Group.core, name, "collection1");
+    String result = SolrMetricManager.getRegistryName(SolrInfoBean.Group.core, name, "collection1");
     assertEquals("solr.core." + name + ".collection1", result);
     // try it with already prefixed name - group will be ignored
-    result = SolrMetricManager.getRegistryName(SolrInfoMBean.Group.core, result);
+    result = SolrMetricManager.getRegistryName(SolrInfoBean.Group.core, result);
     assertEquals("solr.core." + name + ".collection1", result);
     // try it with already prefixed name but with additional segments
-    result = SolrMetricManager.getRegistryName(SolrInfoMBean.Group.core, result, "shard1", "replica1");
+    result = SolrMetricManager.getRegistryName(SolrInfoBean.Group.core, result, "shard1", "replica1");
     assertEquals("solr.core." + name + ".collection1.shard1.replica1", result);
   }
 
@@ -212,46 +205,46 @@ public class SolrMetricManagerTest extends SolrTestCaseJ4 {
         createPluginInfo("node_foo", "node", null),
         createPluginInfo("core_foo", "core", null)
     };
-
-    metricManager.loadReporters(plugins, loader, SolrInfoMBean.Group.node);
+    String tag = "xyz";
+    metricManager.loadReporters(plugins, loader, tag, SolrInfoBean.Group.node);
     Map<String, SolrMetricReporter> reporters = metricManager.getReporters(
-        SolrMetricManager.getRegistryName(SolrInfoMBean.Group.node));
+        SolrMetricManager.getRegistryName(SolrInfoBean.Group.node));
     assertEquals(4, reporters.size());
-    assertTrue(reporters.containsKey("universal_foo"));
-    assertTrue(reporters.containsKey("multigroup_foo"));
-    assertTrue(reporters.containsKey("node_foo"));
-    assertTrue(reporters.containsKey("multiregistry_foo"));
+    assertTrue(reporters.containsKey("universal_foo@" + tag));
+    assertTrue(reporters.containsKey("multigroup_foo@" + tag));
+    assertTrue(reporters.containsKey("node_foo@" + tag));
+    assertTrue(reporters.containsKey("multiregistry_foo@" + tag));
 
-    metricManager.loadReporters(plugins, loader, SolrInfoMBean.Group.core, "collection1");
+    metricManager.loadReporters(plugins, loader, tag, SolrInfoBean.Group.core, "collection1");
     reporters = metricManager.getReporters(
-        SolrMetricManager.getRegistryName(SolrInfoMBean.Group.core, "collection1"));
+        SolrMetricManager.getRegistryName(SolrInfoBean.Group.core, "collection1"));
     assertEquals(5, reporters.size());
-    assertTrue(reporters.containsKey("universal_foo"));
-    assertTrue(reporters.containsKey("multigroup_foo"));
-    assertTrue(reporters.containsKey("specific_foo"));
-    assertTrue(reporters.containsKey("core_foo"));
-    assertTrue(reporters.containsKey("multiregistry_foo"));
+    assertTrue(reporters.containsKey("universal_foo@" + tag));
+    assertTrue(reporters.containsKey("multigroup_foo@" + tag));
+    assertTrue(reporters.containsKey("specific_foo@" + tag));
+    assertTrue(reporters.containsKey("core_foo@" + tag));
+    assertTrue(reporters.containsKey("multiregistry_foo@" + tag));
 
-    metricManager.loadReporters(plugins, loader, SolrInfoMBean.Group.jvm);
+    metricManager.loadReporters(plugins, loader, tag, SolrInfoBean.Group.jvm);
     reporters = metricManager.getReporters(
-        SolrMetricManager.getRegistryName(SolrInfoMBean.Group.jvm));
+        SolrMetricManager.getRegistryName(SolrInfoBean.Group.jvm));
     assertEquals(2, reporters.size());
-    assertTrue(reporters.containsKey("universal_foo"));
-    assertTrue(reporters.containsKey("multigroup_foo"));
+    assertTrue(reporters.containsKey("universal_foo@" + tag));
+    assertTrue(reporters.containsKey("multigroup_foo@" + tag));
 
     metricManager.removeRegistry("solr.jvm");
     reporters = metricManager.getReporters(
-        SolrMetricManager.getRegistryName(SolrInfoMBean.Group.jvm));
+        SolrMetricManager.getRegistryName(SolrInfoBean.Group.jvm));
     assertEquals(0, reporters.size());
 
     metricManager.removeRegistry("solr.node");
     reporters = metricManager.getReporters(
-        SolrMetricManager.getRegistryName(SolrInfoMBean.Group.node));
+        SolrMetricManager.getRegistryName(SolrInfoBean.Group.node));
     assertEquals(0, reporters.size());
 
     metricManager.removeRegistry("solr.core.collection1");
     reporters = metricManager.getReporters(
-        SolrMetricManager.getRegistryName(SolrInfoMBean.Group.core, "collection1"));
+        SolrMetricManager.getRegistryName(SolrInfoBean.Group.core, "collection1"));
     assertEquals(0, reporters.size());
 
   }

@@ -75,6 +75,8 @@ import org.apache.solr.common.cloud.ZooKeeperException;
 import org.apache.solr.common.params.CollectionParams;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.SolrParams;
+import org.apache.solr.common.util.IOUtils;
+import org.apache.solr.common.util.ObjectReleaseTracker;
 import org.apache.solr.common.util.StrUtils;
 import org.apache.solr.common.util.URLUtil;
 import org.apache.solr.common.util.Utils;
@@ -83,6 +85,7 @@ import org.apache.solr.core.CloudConfig;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.CoreDescriptor;
 import org.apache.solr.core.SolrCore;
+import org.apache.solr.core.SolrCoreInitializationException;
 import org.apache.solr.logging.MDCLoggingContext;
 import org.apache.solr.update.UpdateLog;
 import org.apache.zookeeper.CreateMode;
@@ -187,6 +190,7 @@ public class ZkController {
 
   private LeaderElector overseerElector;
 
+  private Map<String, ReplicateFromLeader> replicateFromLeaders = new ConcurrentHashMap<>();
 
   // for now, this can be null in tests, in which case recovery will be inactive, and other features
   // may accept defaults or use mocks rather than pulling things from a CoreContainer
@@ -236,7 +240,7 @@ public class ZkController {
   }
 
   // notifies registered listeners after the ZK reconnect in the background
-  private class OnReconnectNotifyAsync implements Callable {
+  private static class OnReconnectNotifyAsync implements Callable {
 
     private final OnReconnect listener;
 
@@ -323,6 +327,7 @@ public class ZkController {
                 ElectionContext prevContext = overseerElector.getContext();
                 if (prevContext != null) {
                   prevContext.cancelElection();
+                  prevContext.close();
                 }
 
                 overseerElector.setup(context);
@@ -417,6 +422,8 @@ public class ZkController {
     });
 
     init(registerOnReconnect);
+    
+    assert ObjectReleaseTracker.track(this);
   }
 
   public int getLeaderVoteWait() {
@@ -531,11 +538,8 @@ public class ZkController {
       }
     } finally {
       try {
-        try {
-          overseer.close();
-        } catch (Exception e) {
-          log.error("Error closing overseer", e);
-        }
+        IOUtils.closeQuietly(overseerElector.getContext());
+        IOUtils.closeQuietly(overseer);
       } finally {
         try {
           try {
@@ -552,7 +556,7 @@ public class ZkController {
         }
       }
     }
-
+    assert ObjectReleaseTracker.release(this);
   }
 
   /**
@@ -875,7 +879,7 @@ public class ZkController {
           coreName, baseUrl, cloudDesc.getCollectionName(), shardId);
       
       ZkNodeProps leaderProps = new ZkNodeProps(props);
-      
+
       try {
         // If we're a preferred leader, insert ourselves at the head of the queue
         boolean joinAtHead = false;
@@ -911,9 +915,16 @@ public class ZkController {
         // leader election perhaps?
         
         UpdateLog ulog = core.getUpdateHandler().getUpdateLog();
-        
+        boolean onlyLeaderIndexes = zkStateReader.getClusterState().getCollection(collection).getRealtimeReplicas() == 1;
+        boolean isReplicaInOnlyLeaderIndexes = onlyLeaderIndexes && !isLeader;
+        if (isReplicaInOnlyLeaderIndexes) {
+          String commitVersion = ReplicateFromLeader.getCommitVersion(core);
+          if (commitVersion != null) {
+            ulog.copyOverOldUpdates(Long.parseLong(commitVersion));
+          }
+        }
         // we will call register again after zk expiration and on reload
-        if (!afterExpiration && !core.isReloaded() && ulog != null) {
+        if (!afterExpiration && !core.isReloaded() && ulog != null && !isReplicaInOnlyLeaderIndexes) {
           // disable recovery in case shard is in construction state (for shard splits)
           Slice slice = getClusterState().getSlice(collection, shardId);
           if (slice.getState() != Slice.State.CONSTRUCTION || !isLeader) {
@@ -932,6 +943,9 @@ public class ZkController {
         boolean didRecovery
             = checkRecovery(recoverReloadedCores, isLeader, skipRecovery, collection, coreZkNodeName, core, cc, afterExpiration);
         if (!didRecovery) {
+          if (isReplicaInOnlyLeaderIndexes) {
+            startReplicationFromLeader(coreName);
+          }
           publish(desc, Replica.State.ACTIVE);
         }
         
@@ -943,6 +957,20 @@ public class ZkController {
       return shardId;
     } finally {
       MDCLoggingContext.clear();
+    }
+  }
+
+  public void startReplicationFromLeader(String coreName) throws InterruptedException {
+    ReplicateFromLeader replicateFromLeader = new ReplicateFromLeader(cc, coreName);
+    if (replicateFromLeaders.putIfAbsent(coreName, replicateFromLeader) == null) {
+      replicateFromLeader.startReplication();
+    }
+  }
+
+  public void stopReplicationFromLeader(String coreName) {
+    ReplicateFromLeader replicateFromLeader = replicateFromLeaders.remove(coreName);
+    if (replicateFromLeader != null) {
+      replicateFromLeader.stopReplication();
     }
   }
 
@@ -1140,7 +1168,7 @@ public class ZkController {
         MDCLoggingContext.setCore(core);
       }
     } else {
-      MDCLoggingContext.setCoreDescriptor(cd);
+      MDCLoggingContext.setCoreDescriptor(cc, cd);
     }
     try {
       String collection = cd.getCloudDescriptor().getCollectionName();
@@ -1205,6 +1233,9 @@ public class ZkController {
             }
           }
         }
+      } catch (SolrCoreInitializationException ex) {
+        // The core had failed to initialize (in a previous request, not this one), hence nothing to do here.
+        log.info("The core '{}' had failed to initialize before.", cd.getName());
       }
       
       ZkNodeProps m = new ZkNodeProps(props);
@@ -1422,13 +1453,7 @@ public class ZkController {
             errorMessage.set("coreNodeName " + coreNodeName + " does not exist in shard " + cloudDesc.getShardId());
             return false;
           }
-          String baseUrl = replica.getStr(BASE_URL_PROP);
-          String coreName = replica.getStr(CORE_NAME_PROP);
-          if (baseUrl.equals(this.baseURL) && coreName.equals(cd.getName())) {
-            return true;
-          }
-          errorMessage.set("coreNodeName " + coreNodeName + " exists, but does not match expected node or core name");
-          return false;
+          return true;
         });
       } catch (TimeoutException e) {
         String error = errorMessage.get();
@@ -1713,7 +1738,7 @@ public class ZkController {
           //however delete it . This is possible when the last attempt at deleting the election node failed.
           if (electionNode.startsWith(getNodeName())) {
             try {
-              zkClient.delete(OverseerElectionContext.OVERSEER_ELECT + LeaderElector.ELECTION_NODE + "/" + electionNode, -1, true);
+              zkClient.delete(Overseer.OVERSEER_ELECT + LeaderElector.ELECTION_NODE + "/" + electionNode, -1, true);
             } catch (NoNodeException e) {
               //no problem
             } catch (InterruptedException e) {

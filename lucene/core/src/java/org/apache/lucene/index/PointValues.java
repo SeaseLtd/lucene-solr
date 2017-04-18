@@ -46,7 +46,7 @@ import org.apache.lucene.util.bkd.BKDWriter;
  *   <tr><td>{@code double}</td><td>{@link DoublePoint}</td></tr>
  *   <tr><td>{@code byte[]}</td><td>{@link BinaryPoint}</td></tr>
  *   <tr><td>{@link BigInteger}</td><td><a href="{@docRoot}/../sandbox/org/apache/lucene/document/BigIntegerPoint.html">BigIntegerPoint</a>*</td></tr>
- *   <tr><td>{@link InetAddress}</td><td><a href="{@docRoot}/../sandbox/org/apache/lucene/document/InetAddressPoint.html">InetAddressPoint</a>*</td></tr>
+ *   <tr><td>{@link InetAddress}</td><td><a href="{@docRoot}/../misc/org/apache/lucene/document/InetAddressPoint.html">InetAddressPoint</a>*</td></tr>
  * </table>
  * * in the <i>lucene-sandbox</i> jar<br>
  * <p>
@@ -211,8 +211,7 @@ public abstract class PointValues {
      *  determine how to further recurse down the tree. */
     Relation compare(byte[] minPackedValue, byte[] maxPackedValue);
 
-    /** Notifies the caller that this many documents (from one block) are about
-     *  to be visited */
+    /** Notifies the caller that this many documents are about to be visited */
     default void grow(int count) {};
   }
 

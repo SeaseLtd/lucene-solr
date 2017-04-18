@@ -27,6 +27,7 @@ import org.apache.lucene.util.BytesRefBuilder;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.SolrInputField;
+import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.schema.IndexSchema;
 import org.apache.solr.schema.SchemaField;
@@ -60,8 +61,6 @@ public class AddUpdateCommand extends UpdateCommand implements Iterable<Document
    public int commitWithin = -1;
 
    public boolean isLastDocInBatch = false;
-
-   public int pollQueueTime = 0;
    
    public AddUpdateCommand(SolrQueryRequest req) {
      super(req);
@@ -189,8 +188,11 @@ public class AddUpdateCommand extends UpdateCommand implements Iterable<Document
 
         String idField = getHashableId();
 
+        boolean isVersion = version != 0;
+
         for (SolrInputDocument sdoc : all) {
           sdoc.setField("_root_", idField);      // should this be a string or the same type as the ID?
+          if(isVersion) sdoc.setField(CommonParams.VERSION_FIELD, version);
           // TODO: if possible concurrent modification exception (if SolrInputDocument not cloned and is being forwarded to replicas)
           // then we could add this field to the generated lucene document instead.
         }

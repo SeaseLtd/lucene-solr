@@ -19,10 +19,12 @@ package org.apache.solr.uninverting;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.function.Function;
 
 import org.apache.lucene.document.BinaryDocValuesField; // javadocs
 import org.apache.lucene.document.NumericDocValuesField; // javadocs
 import org.apache.lucene.document.SortedDocValuesField; // javadocs
+import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.document.SortedSetDocValuesField; // javadocs
 import org.apache.lucene.document.StringField; // javadocs
 import org.apache.lucene.index.BinaryDocValues;
@@ -169,34 +171,80 @@ public class UninvertingReader extends FilterLeafReader {
      * Fields with this type act as if they were indexed with
      * {@link SortedSetDocValuesField}.
      */
-    SORTED_SET_DOUBLE
+    SORTED_SET_DOUBLE,
+    /** 
+     * Multi-valued Integer, (e.g. indexed with {@link org.apache.lucene.document.IntPoint})
+     * <p>
+     * Fields with this type act as if they were indexed with
+     * {@link SortedNumericDocValuesField}.
+     */
+    SORTED_INTEGER,
+    /** 
+     * Multi-valued Float, (e.g. indexed with {@link org.apache.lucene.document.FloatPoint})
+     * <p>
+     * Fields with this type act as if they were indexed with
+     * {@link SortedNumericDocValuesField}.
+     */
+    SORTED_FLOAT,
+    /** 
+     * Multi-valued Long, (e.g. indexed with {@link org.apache.lucene.document.LongPoint})
+     * <p>
+     * Fields with this type act as if they were indexed with
+     * {@link SortedNumericDocValuesField}.
+     */
+    SORTED_LONG,
+    /** 
+     * Multi-valued Double, (e.g. indexed with {@link org.apache.lucene.document.DoublePoint})
+     * <p>
+     * Fields with this type act as if they were indexed with
+     * {@link SortedNumericDocValuesField}.
+     */
+    SORTED_DOUBLE
   }
   
   /**
+   * 
    * Wraps a provided DirectoryReader. Note that for convenience, the returned reader
    * can be used normally (e.g. passed to {@link DirectoryReader#openIfChanged(DirectoryReader)})
    * and so on. 
+   * 
+   * @param in input directory reader
+   * @param perSegmentMapper function to map a segment reader to a mapping of fields to their uninversion type
+   * @return a wrapped directory reader
    */
+  public static DirectoryReader wrap(DirectoryReader in, final Function<LeafReader, Map<String,Type>> perSegmentMapper) throws IOException {
+    return new UninvertingDirectoryReader(in, perSegmentMapper);
+  }
+  
   public static DirectoryReader wrap(DirectoryReader in, final Map<String,Type> mapping) throws IOException {
-    return new UninvertingDirectoryReader(in, mapping);
+    return UninvertingReader.wrap(in, (r) -> mapping);
   }
   
   static class UninvertingDirectoryReader extends FilterDirectoryReader {
-    final Map<String,Type> mapping;
+    final Function<LeafReader, Map<String,Type>> mapper;
     
-    public UninvertingDirectoryReader(DirectoryReader in, final Map<String,Type> mapping) throws IOException {
+    public UninvertingDirectoryReader(DirectoryReader in, final Function<LeafReader, Map<String,Type>> mapper) throws IOException {
       super(in, new FilterDirectoryReader.SubReaderWrapper() {
         @Override
         public LeafReader wrap(LeafReader reader) {
-          return new UninvertingReader(reader, mapping);
+          return new UninvertingReader(reader, mapper.apply(reader));
         }
       });
-      this.mapping = mapping;
+      this.mapper = mapper;
     }
 
     @Override
     protected DirectoryReader doWrapDirectoryReader(DirectoryReader in) throws IOException {
-      return new UninvertingDirectoryReader(in, mapping);
+      return new UninvertingDirectoryReader(in, mapper);
+    }
+
+    // NOTE: delegating the cache helpers is wrong since this wrapper alters the
+    // content of the reader, it is only fine to do that because Solr ALWAYS
+    // consumes index readers through this wrapper
+
+    @Override
+    public CacheHelper getReaderCacheHelper() {
+      return in.getReaderCacheHelper();
     }
   }
   
@@ -206,7 +254,7 @@ public class UninvertingReader extends FilterLeafReader {
   /** 
    * Create a new UninvertingReader with the specified mapping 
    * <p>
-   * Expert: This should almost never be used. Use {@link #wrap(DirectoryReader, Map)}
+   * Expert: This should almost never be used. Use {@link #wrap(DirectoryReader, Function)}
    * instead.
    *  
    * @lucene.internal
@@ -254,6 +302,12 @@ public class UninvertingReader extends FilterLeafReader {
             case SORTED_SET_LONG:
             case SORTED_SET_DOUBLE:
               type = DocValuesType.SORTED_SET;
+              break;
+            case SORTED_INTEGER:
+            case SORTED_FLOAT:
+            case SORTED_LONG:
+            case SORTED_DOUBLE:
+              type = DocValuesType.SORTED_NUMERIC;
               break;
             default:
               throw new AssertionError();
@@ -356,14 +410,18 @@ public class UninvertingReader extends FilterLeafReader {
     return mapping.get(field);
   }
 
+  // NOTE: delegating the cache helpers is wrong since this wrapper alters the
+  // content of the reader, it is only fine to do that because Solr ALWAYS
+  // consumes index readers through this wrapper
+
   @Override
-  public Object getCoreCacheKey() {
-    return in.getCoreCacheKey();
+  public CacheHelper getCoreCacheHelper() {
+    return in.getCoreCacheHelper();
   }
 
   @Override
-  public Object getCombinedCoreAndDeletesKey() {
-    return in.getCombinedCoreAndDeletesKey();
+  public CacheHelper getReaderCacheHelper() {
+    return in.getReaderCacheHelper();
   }
 
   @Override

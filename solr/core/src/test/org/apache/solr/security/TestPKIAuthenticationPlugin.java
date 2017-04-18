@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.http.Header;
 import org.apache.http.auth.BasicUserPrincipal;
 import org.apache.http.message.BasicHttpRequest;
-import org.apache.lucene.util.Constants;
 import org.apache.solr.SolrTestCaseJ4;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.core.CoreContainer;
@@ -36,10 +35,7 @@ import org.apache.solr.request.LocalSolrQueryRequest;
 import org.apache.solr.request.SolrRequestInfo;
 import org.apache.solr.response.SolrQueryResponse;
 import org.apache.solr.util.CryptoKeys;
-import org.easymock.EasyMock;
-import org.junit.BeforeClass;
-
-import static org.easymock.EasyMock.getCurrentArguments;
+import static org.mockito.Mockito.*;
 
 public class TestPKIAuthenticationPlugin extends SolrTestCaseJ4 {
 
@@ -73,11 +69,6 @@ public class TestPKIAuthenticationPlugin extends SolrTestCaseJ4 {
     }
   }
 
-  @BeforeClass
-  public static void beforeClass() throws Exception {
-    assumeFalse("SOLR-9893: EasyMock does not work with Java 9", Constants.JRE_IS_MINIMUM_JAVA9);
-  }
-  
   public void test() throws Exception {
     AtomicReference<Principal> principal = new AtomicReference<>();
     String nodeName = "node_x_233";
@@ -120,6 +111,9 @@ public class TestPKIAuthenticationPlugin extends SolrTestCaseJ4 {
     assertNull(((HttpServletRequest) wrappedRequestByFilter.get()).getUserPrincipal());
 
     //test 3 . No user request . Request originated from Solr
+    //create pub key in advance because it can take time and it should be
+    //created before the header is set
+    PublicKey key = new CryptoKeys.RSAKeyPair().getPublicKey();
     mock.solrRequestInfo = null;
     header.set(null);
     wrappedRequestByFilter.set(null);
@@ -133,14 +127,13 @@ public class TestPKIAuthenticationPlugin extends SolrTestCaseJ4 {
     assertNotNull(wrappedRequestByFilter.get());
     assertEquals("$", ((HttpServletRequest) wrappedRequestByFilter.get()).getUserPrincipal().getName());
 
-
-
+    /*test4 mock the restart of a node*/
     MockPKIAuthenticationPlugin mock1 = new MockPKIAuthenticationPlugin(null, nodeName) {
       int called = 0;
       @Override
       PublicKey getRemotePublicKey(String nodename) {
         try {
-          return called == 0 ? new CryptoKeys.RSAKeyPair().getPublicKey() : correctKey;
+          return called == 0 ? key : correctKey;
         } finally {
           called++;
         }
@@ -152,27 +145,17 @@ public class TestPKIAuthenticationPlugin extends SolrTestCaseJ4 {
     assertEquals("$", ((HttpServletRequest) wrappedRequestByFilter.get()).getUserPrincipal().getName());
 
 
-
-
   }
 
   private HttpServletRequest createMockRequest(final AtomicReference<Header> header) {
-    HttpServletRequest mockReq = EasyMock.createMock(HttpServletRequest.class);
-    EasyMock.reset(mockReq);
-    mockReq.getHeader(EasyMock.anyObject(String.class));
-    EasyMock.expectLastCall().andAnswer(() -> {
-      if (PKIAuthenticationPlugin.HEADER.equals(getCurrentArguments()[0])) {
+    HttpServletRequest mockReq = mock(HttpServletRequest.class);
+    when(mockReq.getHeader(any(String.class))).then(invocation -> {
+      if (PKIAuthenticationPlugin.HEADER.equals(invocation.getArgument(0))) {
         if (header.get() == null) return null;
         return header.get().getValue();
       } else return null;
-    }).anyTimes();
-    mockReq.getUserPrincipal();
-    EasyMock.expectLastCall().andAnswer(() -> null).anyTimes();
-
-    mockReq.getRequestURI();
-    EasyMock.expectLastCall().andAnswer(() -> "/collection1/select").anyTimes();
-
-    EasyMock.replay(mockReq);
+    });
+    when(mockReq.getRequestURI()).thenReturn("/collection1/select");
     return mockReq;
   }
 }

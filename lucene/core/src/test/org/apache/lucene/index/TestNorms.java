@@ -19,6 +19,8 @@ package org.apache.lucene.index;
 
 import java.io.IOException;
 import java.util.Random;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
@@ -46,9 +48,9 @@ import org.apache.lucene.util.TestUtil;
 @SuppressCodecs({ "Memory", "Direct", "SimpleText" })
 @Slow
 public class TestNorms extends LuceneTestCase {
-  final String byteTestField = "normsTestByte";
+  static final String BYTE_TEST_FIELD = "normsTestByte";
 
-  class CustomNormEncodingSimilarity extends TFIDFSimilarity {
+  static class CustomNormEncodingSimilarity extends TFIDFSimilarity {
 
     @Override
     public long encodeNormValue(float f) {
@@ -113,11 +115,11 @@ public class TestNorms extends LuceneTestCase {
     Directory dir = newFSDirectory(createTempDir("TestNorms.testMaxByteNorms"));
     buildIndex(dir);
     DirectoryReader open = DirectoryReader.open(dir);
-    NumericDocValues normValues = MultiDocValues.getNormValues(open, byteTestField);
+    NumericDocValues normValues = MultiDocValues.getNormValues(open, BYTE_TEST_FIELD);
     assertNotNull(normValues);
     for (int i = 0; i < open.maxDoc(); i++) {
       Document document = open.document(i);
-      int expected = Integer.parseInt(document.get(byteTestField));
+      int expected = Integer.parseInt(document.get(BYTE_TEST_FIELD).split(" ")[0]);
       assertEquals(i, normValues.nextDoc());
       assertEquals(expected, normValues.longValue());
     }
@@ -139,12 +141,12 @@ public class TestNorms extends LuceneTestCase {
     int num = atLeast(100);
     for (int i = 0; i < num; i++) {
       Document doc = docs.nextDoc();
-      int boost = random().nextInt(255);
-      Field f = new TextField(byteTestField, "" + boost, Field.Store.YES);
-      f.setBoost(boost);
+      int boost = TestUtil.nextInt(random, 1, 255);
+      String value = IntStream.range(0, boost).mapToObj(k -> Integer.toString(boost)).collect(Collectors.joining(" "));
+      Field f = new TextField(BYTE_TEST_FIELD, value, Field.Store.YES);
       doc.add(f);
       writer.addDocument(doc);
-      doc.removeField(byteTestField);
+      doc.removeField(BYTE_TEST_FIELD);
       if (rarely()) {
         writer.commit();
       }
@@ -160,7 +162,7 @@ public class TestNorms extends LuceneTestCase {
 
     @Override
     public Similarity get(String field) {
-      if (byteTestField.equals(field)) {
+      if (BYTE_TEST_FIELD.equals(field)) {
         return new ByteEncodingBoostSimilarity();
       } else {
         return delegate;
@@ -173,8 +175,7 @@ public class TestNorms extends LuceneTestCase {
 
     @Override
     public long computeNorm(FieldInvertState state) {
-      int boost = (int) state.getBoost();
-      return (0xFF & boost);
+      return state.getLength();
     }
 
     @Override

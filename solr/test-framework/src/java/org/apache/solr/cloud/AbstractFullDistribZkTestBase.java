@@ -19,7 +19,6 @@ package org.apache.solr.cloud;
 import java.io.File;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Path;
@@ -272,6 +271,10 @@ public abstract class AbstractFullDistribZkTestBase extends AbstractDistribZkTes
     chaosMonkey = new ChaosMonkey(zkServer, zkStateReader, DEFAULT_COLLECTION,
         shardToJetty, shardToLeaderJetty);
   }
+
+  protected int getRealtimeReplicas() {
+    return -1;
+  }
   
   protected CloudSolrClient createCloudClient(String defaultCollection) {
     CloudSolrClient client = getCloudSolrClient(zkServer.getZkAddress(), random().nextBoolean());
@@ -383,7 +386,8 @@ public abstract class AbstractFullDistribZkTestBase extends AbstractDistribZkTes
           Utils.toJSON(Utils.makeMap(Overseer.QUEUE_OPERATION,
               CollectionParams.CollectionAction.CREATE.toLower(), "name",
               DEFAULT_COLLECTION, "numShards", String.valueOf(sliceCount),
-              DocCollection.STATE_FORMAT, getStateFormat())));
+              DocCollection.STATE_FORMAT, getStateFormat(),
+              ZkStateReader.REALTIME_REPLICAS, getRealtimeReplicas())));
       zkClient.close();
     }
 
@@ -591,14 +595,6 @@ public abstract class AbstractFullDistribZkTestBase extends AbstractDistribZkTes
     }
     assertNotNull("No proxy found for " + baseUrl + "!", proxy);
     return proxy;
-  }
-
-  protected int getNextAvailablePort() throws Exception {
-    int port = -1;
-    try (ServerSocket s = new ServerSocket(0)) {
-      port = s.getLocalPort();
-    }
-    return port;
   }
 
   private File getRelativeSolrHomePath(File solrHome) {
@@ -828,6 +824,15 @@ public abstract class AbstractFullDistribZkTestBase extends AbstractDistribZkTes
 
     // add to control second in case adding to shards fails
     controlClient.add(doc);
+  }
+  
+  protected ZkCoreNodeProps getLeaderUrlFromZk(String collection, String slice) {
+    ClusterState clusterState = getCommonCloudSolrClient().getZkStateReader().getClusterState();
+    ZkNodeProps leader = clusterState.getLeader(collection, slice);
+    if (leader == null) {
+      throw new RuntimeException("Could not find leader:" + collection + " " + slice);
+    }
+    return new ZkCoreNodeProps(leader);
   }
 
   @Override
@@ -1610,7 +1615,8 @@ public abstract class AbstractFullDistribZkTestBase extends AbstractDistribZkTes
         NUM_SLICES, numShards,
         ZkStateReader.REPLICATION_FACTOR, replicationFactor,
         CREATE_NODE_SET, createNodeSetStr,
-        ZkStateReader.MAX_SHARDS_PER_NODE, maxShardsPerNode),
+        ZkStateReader.MAX_SHARDS_PER_NODE, maxShardsPerNode,
+        ZkStateReader.REALTIME_REPLICAS, getRealtimeReplicas()),
         client);
   }
 
@@ -1622,7 +1628,8 @@ public abstract class AbstractFullDistribZkTestBase extends AbstractDistribZkTes
         NUM_SLICES, numShards,
         ZkStateReader.REPLICATION_FACTOR, replicationFactor,
         CREATE_NODE_SET, createNodeSetStr,
-        ZkStateReader.MAX_SHARDS_PER_NODE, maxShardsPerNode),
+        ZkStateReader.MAX_SHARDS_PER_NODE, maxShardsPerNode,
+        ZkStateReader.REALTIME_REPLICAS, getRealtimeReplicas()),
         client, configName);
   }
 
@@ -1805,6 +1812,7 @@ public abstract class AbstractFullDistribZkTestBase extends AbstractDistribZkTes
     Map<String, Object> props = makeMap(
         ZkStateReader.REPLICATION_FACTOR, replicationFactor,
         ZkStateReader.MAX_SHARDS_PER_NODE, maxShardsPerNode,
+        ZkStateReader.REALTIME_REPLICAS, getRealtimeReplicas(),
         NUM_SLICES, numShards);
     Map<String,List<Integer>> collectionInfos = new HashMap<>();
     createCollection(collectionInfos, collName, props, client);

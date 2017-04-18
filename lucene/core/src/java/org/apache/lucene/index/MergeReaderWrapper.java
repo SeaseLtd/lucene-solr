@@ -24,7 +24,6 @@ import org.apache.lucene.codecs.FieldsProducer;
 import org.apache.lucene.codecs.NormsProducer;
 import org.apache.lucene.codecs.StoredFieldsReader;
 import org.apache.lucene.codecs.TermVectorsReader;
-import org.apache.lucene.search.Sort;
 import org.apache.lucene.util.Bits;
 
 /** This is a hack to make index sorting fast, with a {@link LeafReader} that always returns merge instances when you ask for the codec readers. */
@@ -68,16 +67,6 @@ class MergeReaderWrapper extends LeafReader {
       vectors = vectors.getMergeInstance();
     }
     this.vectors = vectors;
-  }
-
-  @Override
-  public void addCoreClosedListener(CoreClosedListener listener) {
-    in.addCoreClosedListener(listener);
-  }
-
-  @Override
-  public void removeCoreClosedListener(CoreClosedListener listener) {
-    in.removeCoreClosedListener(listener);
   }
 
   @Override
@@ -224,15 +213,15 @@ class MergeReaderWrapper extends LeafReader {
   }
 
   @Override
-  public Object getCoreCacheKey() {
-    return in.getCoreCacheKey();
+  public CacheHelper getCoreCacheHelper() {
+    return in.getCoreCacheHelper();
   }
 
   @Override
-  public Object getCombinedCoreAndDeletesKey() {
-    return in.getCombinedCoreAndDeletesKey();
+  public CacheHelper getReaderCacheHelper() {
+    return in.getReaderCacheHelper();
   }
-  
+
   private void checkBounds(int docID) {
     if (docID < 0 || docID >= maxDoc()) {       
       throw new IndexOutOfBoundsException("docID must be >= 0 and < maxDoc=" + maxDoc() + " (got docID=" + docID + ")");
@@ -245,7 +234,7 @@ class MergeReaderWrapper extends LeafReader {
   }
 
   @Override
-  public Sort getIndexSort() {
-    return in.getIndexSort();
+  public LeafMetaData getMetaData() {
+    return in.getMetaData();
   }
 }

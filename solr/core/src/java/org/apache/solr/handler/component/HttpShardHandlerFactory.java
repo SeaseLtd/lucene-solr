@@ -36,7 +36,7 @@ import org.apache.solr.common.util.StrUtils;
 import org.apache.solr.common.util.URLUtil;
 import org.apache.solr.core.CoreDescriptor;
 import org.apache.solr.core.PluginInfo;
-import org.apache.solr.core.SolrInfoMBean;
+import org.apache.solr.core.SolrInfoBean;
 import org.apache.solr.metrics.SolrMetricManager;
 import org.apache.solr.metrics.SolrMetricProducer;
 import org.apache.solr.update.UpdateShardHandlerConfig;
@@ -103,7 +103,7 @@ public class HttpShardHandlerFactory extends ShardHandlerFactory implements org.
 
   private HttpClientMetricNameStrategy metricNameStrategy;
 
-  private final Random r = new Random();
+  protected final Random r = new Random();
 
   private final ReplicaListTransformer shufflingReplicaListTransformer = new ShufflingReplicaListTransformer(r);
 
@@ -124,10 +124,6 @@ public class HttpShardHandlerFactory extends ShardHandlerFactory implements org.
 
   // Configure if the threadpool favours fairness over throughput
   static final String INIT_FAIRNESS_POLICY = "fairnessPolicy";
-  
-  // Turn on retries for certain IOExceptions, many of which can happen
-  // due to connection pooling limitations / races
-  static final String USE_RETRIES = "useRetries";
 
   /**
    * Get {@link ShardHandler} that uses the default http client.
@@ -283,7 +279,7 @@ public class HttpShardHandlerFactory extends ShardHandlerFactory implements org.
    * If all nodes prefer local-cores then a bad/heavily-loaded node will receive less requests from healthy nodes.
    * This will help prevent a distributed deadlock or timeouts in all the healthy nodes due to one bad node.
    */
-  private class IsOnPreferredHostComparator implements Comparator<Object> {
+  private static class IsOnPreferredHostComparator implements Comparator<Object> {
     final private String preferredHostAddress;
     public IsOnPreferredHostComparator(String preferredHostAddress) {
       this.preferredHostAddress = preferredHostAddress;
@@ -318,13 +314,13 @@ public class HttpShardHandlerFactory extends ShardHandlerFactory implements org.
       return s != null && s.startsWith(preferredHostAddress);
     }
   }
-  ReplicaListTransformer getReplicaListTransformer(final SolrQueryRequest req)
+  protected ReplicaListTransformer getReplicaListTransformer(final SolrQueryRequest req)
   {
     final SolrParams params = req.getParams();
 
     if (params.getBool(CommonParams.PREFER_LOCAL_SHARDS, false)) {
       final CoreDescriptor coreDescriptor = req.getCore().getCoreDescriptor();
-      final ZkController zkController = coreDescriptor.getCoreContainer().getZkController();
+      final ZkController zkController = req.getCore().getCoreContainer().getZkController();
       final String preferredHostAddress = (zkController != null) ? zkController.getBaseUrl() : null;
       if (preferredHostAddress == null) {
         log.warn("Couldn't determine current host address to prefer local shards");
@@ -377,10 +373,10 @@ public class HttpShardHandlerFactory extends ShardHandlerFactory implements org.
 
   @Override
   public void initializeMetrics(SolrMetricManager manager, String registry, String scope) {
-    String expandedScope = SolrMetricManager.mkName(scope, SolrInfoMBean.Category.QUERY.name());
+    String expandedScope = SolrMetricManager.mkName(scope, SolrInfoBean.Category.QUERY.name());
     clientConnectionManager.initializeMetrics(manager, registry, expandedScope);
     httpRequestExecutor.initializeMetrics(manager, registry, expandedScope);
-    commExecutor = MetricUtils.instrumentedExecutorService(commExecutor,
+    commExecutor = MetricUtils.instrumentedExecutorService(commExecutor, null,
         manager.registry(registry),
         SolrMetricManager.mkName("httpShardExecutor", expandedScope, "threadPool"));
   }

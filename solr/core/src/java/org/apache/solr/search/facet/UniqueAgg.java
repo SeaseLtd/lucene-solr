@@ -48,7 +48,7 @@ public class UniqueAgg extends StrAggValueSource {
         return new UniqueMultivaluedSlotAcc(fcontext, getArg(), numSlots, null);
       }
     } else {
-      if (sf.getType().getNumericType() != null) {
+      if (sf.getType().getNumberType() != null) {
         return new NumericAcc(fcontext, getArg(), numSlots);
       } else {
         return new UniqueSinglevaluedSlotAcc(fcontext, getArg(), numSlots, null);
@@ -187,7 +187,7 @@ public class UniqueAgg extends StrAggValueSource {
   }
 
 
-  class NumericAcc extends SlotAcc {
+  static class NumericAcc extends SlotAcc {
     SchemaField sf;
     LongSet[] sets;
     NumericDocValues values;

@@ -149,7 +149,7 @@ class FacetFieldProcessorByEnumTermsStream extends FacetFieldProcessor implement
     if (freq.prefix != null) {
       String indexedPrefix = sf.getType().toInternal(freq.prefix);
       startTermBytes = new BytesRef(indexedPrefix);
-    } else if (sf.getType().getNumericType() != null) {
+    } else if (sf.getType().getNumberType() != null) {
       String triePrefix = TrieField.getMainValuePrefix(sf.getType());
       if (triePrefix != null) {
         startTermBytes = new BytesRef(triePrefix);
@@ -333,7 +333,7 @@ class FacetFieldProcessorByEnumTermsStream extends FacetFieldProcessor implement
         bucket.add("val", bucketVal);
         addStats(bucket, 0);
         if (hasSubFacets) {
-          processSubs(bucket, bucketQuery, termSet);
+          processSubs(bucket, bucketQuery, termSet, false, null);
         }
 
         // TODO... termSet needs to stick around for streaming sub-facets?

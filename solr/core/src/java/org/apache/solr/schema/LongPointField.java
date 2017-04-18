@@ -17,23 +17,20 @@
 
 package org.apache.solr.schema;
 
-import java.lang.invoke.MethodHandles;
 import java.util.Collection;
 
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.legacy.LegacyNumericType;
 import org.apache.lucene.queries.function.ValueSource;
 import org.apache.lucene.queries.function.valuesource.LongFieldSource;
+import org.apache.lucene.queries.function.valuesource.MultiValuedLongFieldSource;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.apache.solr.search.QParser;
 import org.apache.solr.uninverting.UninvertingReader.Type;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * {@code PointField} implementation for {@code Long} values.
@@ -41,8 +38,6 @@ import org.slf4j.LoggerFactory;
  * @see LongPoint
  */
 public class LongPointField extends PointField implements LongValueFieldType {
-
-  private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
   public LongPointField() {
     type = NumberType.LONG;
@@ -107,6 +102,9 @@ public class LongPointField extends PointField implements LongValueFieldType {
   @Override
   public Query getSetQuery(QParser parser, SchemaField field, Collection<String> externalVal) {
     assert externalVal.size() > 0;
+    if (!field.indexed()) {
+      return super.getSetQuery(parser, field, externalVal);
+    }
     long[] values = new long[externalVal.size()];
     int i = 0;
     for (String val:externalVal) {
@@ -149,8 +147,7 @@ public class LongPointField extends PointField implements LongValueFieldType {
   @Override
   public Type getUninversionType(SchemaField sf) {
     if (sf.multiValued()) {
-      throw new UnsupportedOperationException("MultiValued Point fields with DocValues is not currently supported");
-//      return Type.SORTED_LONG;
+      return Type.SORTED_LONG;
     } else {
       return Type.LONG_POINT;
     }
@@ -161,19 +158,15 @@ public class LongPointField extends PointField implements LongValueFieldType {
     field.checkFieldCacheSource();
     return new LongFieldSource(field.getName());
   }
-
+  
   @Override
-  public LegacyNumericType getNumericType() {
-    return LegacyNumericType.LONG;
+  protected ValueSource getSingleValueSource(org.apache.lucene.search.SortedNumericSelector.Type choice,
+      SchemaField field) {
+    return new MultiValuedLongFieldSource(field.getName(), choice);
   }
 
   @Override
-  public IndexableField createField(SchemaField field, Object value, float boost) {
-    if (!isFieldUsed(field)) return null;
-
-    if (boost != 1.0 && log.isTraceEnabled()) {
-      log.trace("Can't use document/field boost for PointField. Field: " + field.getName() + ", boost: " + boost);
-    }
+  public IndexableField createField(SchemaField field, Object value) {
     long longValue = (value instanceof Number) ? ((Number) value).longValue() : Long.parseLong(value.toString());
     return new LongPoint(field.getName(), longValue);
   }

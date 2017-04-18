@@ -33,6 +33,7 @@ import java.lang.annotation.Target;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
+import java.net.ServerSocket;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -51,8 +52,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import java.util.Map.Entry;
+import java.util.concurrent.TimeUnit;
 
 import com.carrotsearch.randomizedtesting.RandomizedContext;
+import com.carrotsearch.randomizedtesting.TraceFormatting;
 import com.carrotsearch.randomizedtesting.annotations.ThreadLeakFilters;
 import com.carrotsearch.randomizedtesting.rules.SystemPropertiesRestoreRule;
 import org.apache.commons.io.FileUtils;
@@ -154,6 +159,14 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
 
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
+  private static final List<String> DEFAULT_STACK_FILTERS = Arrays.asList(new String [] {
+      "org.junit.",
+      "junit.framework.",
+      "sun.",
+      "java.lang.reflect.",
+      "com.carrotsearch.randomizedtesting.",
+  });
+  
   public static final String DEFAULT_TEST_COLLECTION_NAME = "collection1";
   public static final String DEFAULT_TEST_CORENAME = DEFAULT_TEST_COLLECTION_NAME;
   protected static final String CORE_PROPERTIES_FILENAME = "core.properties";
@@ -262,6 +275,7 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
     System.setProperty("tests.shardhandler.randomSeed", Long.toString(random().nextLong()));
     System.setProperty("solr.clustering.enabled", "false");
     System.setProperty("solr.peerSync.useRangeVersions", String.valueOf(random().nextBoolean()));
+    System.setProperty("solr.cloud.wait-for-updates-with-stale-state-pause", "500");
     startTrackingSearchers();
     ignoreException("ignore_exception");
     newRandomConfig();
@@ -284,17 +298,10 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
       if (suiteFailureMarker.wasSuccessful()) {
         // if the tests passed, make sure everything was closed / released
         if (!RandomizedContext.current().getTargetClass().isAnnotationPresent(SuppressObjectReleaseTracker.class)) {
-          endTrackingSearchers(120, false);
-          String orr = ObjectReleaseTracker.clearObjectTrackerAndCheckEmpty(30);
+          String orr = clearObjectTrackerAndCheckEmpty(20, false);
           assertNull(orr, orr);
         } else {
-          endTrackingSearchers(15, false);
-          String orr = ObjectReleaseTracker.checkEmpty();
-          if (orr != null) {
-            log.warn(
-                "Some resources were not closed, shutdown, or released. This has been ignored due to the SuppressObjectReleaseTracker annotation, trying to close them now.");
-            ObjectReleaseTracker.tryClose();
-          }
+          clearObjectTrackerAndCheckEmpty(20, true);
         }
       }
       resetFactory();
@@ -310,7 +317,7 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
       System.clearProperty("useCompoundFile");
       System.clearProperty("urlScheme");
       System.clearProperty("solr.peerSync.useRangeVersions");
-      
+      System.clearProperty("solr.cloud.wait-for-updates-with-stale-state-pause");
       HttpClientUtil.resetHttpClientBuilder();
 
       // clean up static
@@ -322,6 +329,55 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
 
     LogLevel.Configurer.restoreLogLevels(savedClassLogLevels);
     savedClassLogLevels.clear();
+  }
+  
+  /**
+   * @return null if ok else error message
+   */
+  public static String clearObjectTrackerAndCheckEmpty(int waitSeconds) {
+    return clearObjectTrackerAndCheckEmpty(waitSeconds, false);
+  }
+  
+  /**
+   * @return null if ok else error message
+   */
+  public static String clearObjectTrackerAndCheckEmpty(int waitSeconds, boolean tryClose) {
+    int retries = 0;
+    String result;
+    do {
+      result = ObjectReleaseTracker.checkEmpty();
+      if (result == null)
+        break;
+      try {
+        if (retries % 10 == 0) {
+          log.info("Waiting for all tracked resources to be released");
+          if (retries > 10) {
+            TraceFormatting tf = new TraceFormatting(DEFAULT_STACK_FILTERS);
+            Map<Thread,StackTraceElement[]> stacksMap = Thread.getAllStackTraces();
+            Set<Entry<Thread,StackTraceElement[]>> entries = stacksMap.entrySet();
+            for (Entry<Thread,StackTraceElement[]> entry : entries) {
+              String stack = tf.formatStackTrace(entry.getValue());
+              System.err.println(entry.getKey().getName() + ":\n" + stack);
+            }
+          }
+        }
+        TimeUnit.SECONDS.sleep(1);
+      } catch (InterruptedException e) { break; }
+    }
+    while (retries++ < waitSeconds);
+    
+    
+    log.info("------------------------------------------------------- Done waiting for tracked resources to be released");
+    
+    if (tryClose && result != null && RandomizedContext.current().getTargetClass().isAnnotationPresent(SuppressObjectReleaseTracker.class)) {
+      log.warn(
+          "Some resources were not closed, shutdown, or released. This has been ignored due to the SuppressObjectReleaseTracker annotation, trying to close them now.");
+      ObjectReleaseTracker.tryClose();
+    }
+    
+    ObjectReleaseTracker.clear();
+    
+    return result;
   }
 
   private static Map<String, String> savedClassLogLevels = new HashMap<>();
@@ -467,12 +523,14 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
       System.setProperty("solr.tests.longClass", "long");
       System.setProperty("solr.tests.doubleClass", "double");
       System.setProperty("solr.tests.floatClass", "float");
+      System.setProperty("solr.tests.dateClass", "date");
     } else {
       log.info("Using PointFields");
       System.setProperty("solr.tests.intClass", "pint");
       System.setProperty("solr.tests.longClass", "plong");
       System.setProperty("solr.tests.doubleClass", "pdouble");
       System.setProperty("solr.tests.floatClass", "pfloat");
+      System.setProperty("solr.tests.dateClass", "pdate");
     }
   }
 
@@ -530,38 +588,6 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
       numOpens = numCloses = 0;
     }
   }
-
-  public static void endTrackingSearchers(int waitSeconds, boolean failTest) {
-     long endNumOpens = SolrIndexSearcher.numOpens.get();
-     long endNumCloses = SolrIndexSearcher.numCloses.get();
-
-     // wait a bit in case any ending threads have anything to release
-     int retries = 0;
-     while (endNumOpens - numOpens != endNumCloses - numCloses) {
-       if (retries++ > waitSeconds) {
-         break;
-       }
-       try {
-         Thread.sleep(1000);
-       } catch (InterruptedException e) {}
-       endNumOpens = SolrIndexSearcher.numOpens.get();
-       endNumCloses = SolrIndexSearcher.numCloses.get();
-     }
-
-     SolrIndexSearcher.numOpens.getAndSet(0);
-     SolrIndexSearcher.numCloses.getAndSet(0);
-
-     if (endNumOpens-numOpens != endNumCloses-numCloses) {
-       String msg = "ERROR: SolrIndexSearcher opens=" + (endNumOpens-numOpens) + " closes=" + (endNumCloses-numCloses);
-       log.error(msg);
-       // if it's TestReplicationHandler, ignore it. the test is broken and gets no love
-       if ("TestReplicationHandler".equals(RandomizedContext.current().getTargetClass().getSimpleName())) {
-         log.warn("TestReplicationHandler wants to fail!: " + msg);
-       } else {
-         if (failTest) fail(msg);
-       }
-     }
-  }
   
   /** Causes an exception matching the regex pattern to not be logged. */
   public static void ignoreException(String pattern) {
@@ -595,7 +621,7 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
   protected static SolrConfig solrConfig;
 
   /**
-   * Harness initialized by initTestHarness.
+   * Harness initialized by create[Default]Core[Container].
    *
    * <p>
    * For use in test methods as needed.
@@ -604,7 +630,7 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
   protected static TestHarness h;
 
   /**
-   * LocalRequestFactory initialized by initTestHarness using sensible
+   * LocalRequestFactory initialized by create[Default]Core[Container] using sensible
    * defaults.
    *
    * <p>
@@ -777,6 +803,19 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
     configString = schemaString = null;
   }
 
+  /**
+   * Find next available local port.
+   * @return available port number or -1 if none could be found
+   * @throws Exception on IO errors
+   */
+  protected static int getNextAvailablePort() throws Exception {
+    int port = -1;
+    try (ServerSocket s = new ServerSocket(0)) {
+      port = s.getLocalPort();
+    }
+    return port;
+  }
+
 
   /** Validates an update XML String is successful
    */
@@ -827,7 +866,7 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
   /** Validates a query matches some XPath test expressions and closes the query */
   public static void assertQ(String message, SolrQueryRequest req, String... tests) {
     try {
-      String m = (null == message) ? "" : message + " ";
+      String m = (null == message) ? "" : message + " "; // TODO log 'm' !!!
       String response = h.query(req);
 
       if (req.getParams().getBool("facet", false)) {
@@ -1235,6 +1274,25 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
     return sd;
   }
 
+  public SolrInputDocument sdocWithChildren(String id, String version) {
+    return sdocWithChildren(id, version, 2);
+  }
+
+  public SolrInputDocument sdocWithChildren(String id, String version, int childCount) {
+    SolrInputDocument doc = sdoc("id", id, "_version_", version);
+    for (int i = 1; i <= childCount; i++) {
+      doc.addChildDocument(sdoc("id", id + "_child" + i));
+    }
+    return doc;
+  }
+  public SolrInputDocument sdocWithChildren(Integer id, String version, int childCount) {
+    SolrInputDocument doc = sdoc("id", id, "_version_", version);
+    for (int i = 1; i <= childCount; i++) {
+      doc.addChildDocument(sdoc("id", (1000)*id + i));
+    }
+    return doc;
+  }
+
   public static List<SolrInputDocument> sdocs(SolrInputDocument... docs) {
     return Arrays.asList(docs);
   }
@@ -1583,7 +1641,7 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
     }
   }
 
-  protected class FldType {
+  protected static class FldType {
     public String fname;
     public IVals numValues;
     public Vals vals;
@@ -1938,6 +1996,10 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
   // the string to write to the core.properties file may be null in which case nothing is done with it.
   // propertiesContent may be an empty string, which will actually work.
   public static void copyMinConf(File dstRoot, String propertiesContent) throws IOException {
+    copyMinConf(dstRoot, propertiesContent, "solrconfig-minimal.xml");
+  }
+
+  public static void copyMinConf(File dstRoot, String propertiesContent, String solrconfigXmlName) throws IOException {
 
     File subHome = new File(dstRoot, "conf");
     if (! dstRoot.exists()) {
@@ -1949,12 +2011,11 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
     }
     String top = SolrTestCaseJ4.TEST_HOME() + "/collection1/conf";
     FileUtils.copyFile(new File(top, "schema-tiny.xml"), new File(subHome, "schema.xml"));
-    FileUtils.copyFile(new File(top, "solrconfig-minimal.xml"), new File(subHome, "solrconfig.xml"));
+    FileUtils.copyFile(new File(top, solrconfigXmlName), new File(subHome, "solrconfig.xml"));
     FileUtils.copyFile(new File(top, "solrconfig.snippet.randomindexconfig.xml"), new File(subHome, "solrconfig.snippet.randomindexconfig.xml"));
   }
 
-  // Creates minimal full setup, including the old solr.xml file that used to be hard coded in ConfigSolrXmlOld
-  // TODO: remove for 5.0
+  // Creates minimal full setup, including solr.xml
   public static void copyMinFullSetup(File dstRoot) throws IOException {
     if (! dstRoot.exists()) {
       assertTrue("Failed to make subdirectory ", dstRoot.mkdirs());
@@ -1964,6 +2025,15 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
     copyMinConf(dstRoot);
   }
 
+  // Just copies the file indicated to the tmp home directory naming it "solr.xml"
+  public static void copyXmlToHome(File dstRoot, String fromFile) throws IOException {
+    if (! dstRoot.exists()) {
+      assertTrue("Failed to make subdirectory ", dstRoot.mkdirs());
+    }
+    File xmlF = new File(SolrTestCaseJ4.TEST_HOME(), fromFile);
+    FileUtils.copyFile(xmlF, new File(dstRoot, "solr.xml"));
+    
+  }
   // Creates a consistent configuration, _including_ solr.xml at dstRoot. Creates collection1/conf and copies
   // the stock files in there.
 
@@ -1971,7 +2041,6 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
     if (!dstRoot.exists()) {
       assertTrue("Failed to make subdirectory ", dstRoot.mkdirs());
     }
-
     FileUtils.copyFile(new File(SolrTestCaseJ4.TEST_HOME(), "solr.xml"), new File(dstRoot, "solr.xml"));
 
     File subHome = new File(dstRoot, collection + File.separator + "conf");
@@ -2076,9 +2145,6 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
 
     SolrInputDocument sdoc1 = (SolrInputDocument) expected;
     SolrInputDocument sdoc2 = (SolrInputDocument) actual;
-    if (Float.compare(sdoc1.getDocumentBoost(), sdoc2.getDocumentBoost()) != 0) {
-      return false;
-    }
 
     if(sdoc1.getFieldNames().size() != sdoc2.getFieldNames().size()) {
       return false;
@@ -2134,10 +2200,6 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
     }
 
     if (!sif1.getValue().equals(sif2.getValue())) {
-      return false;
-    }
-
-    if (Float.compare(sif1.getBoost(), sif2.getBoost()) != 0) {
       return false;
     }
 
@@ -2412,5 +2474,9 @@ public abstract class SolrTestCaseJ4 extends LuceneTestCase {
 
   protected static void systemClearPropertySolrTestsMergePolicyFactory() {
     System.clearProperty(SYSTEM_PROPERTY_SOLR_TESTS_MERGEPOLICYFACTORY);
+  }
+  
+  protected <T> T pickRandom(T... options) {
+    return options[random().nextInt(options.length)];
   }
 }

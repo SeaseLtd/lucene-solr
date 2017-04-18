@@ -17,24 +17,23 @@
 
 package org.apache.solr.schema;
 
-import java.lang.invoke.MethodHandles;
 import java.util.Collection;
 
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.DocValuesType;
 import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.legacy.LegacyNumericType;
 import org.apache.lucene.queries.function.ValueSource;
 import org.apache.lucene.queries.function.valuesource.DoubleFieldSource;
+import org.apache.lucene.queries.function.valuesource.MultiValuedDoubleFieldSource;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.SortedNumericSelector;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
+import org.apache.lucene.util.NumericUtils;
 import org.apache.solr.search.QParser;
 import org.apache.solr.uninverting.UninvertingReader.Type;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * {@code PointField} implementation for {@code Double} values.
@@ -42,8 +41,6 @@ import org.slf4j.LoggerFactory;
  * @see DoublePoint
  */
 public class DoublePointField extends PointField implements DoubleValueFieldType {
-
-  private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
   public DoublePointField() {
     type = NumberType.DOUBLE;
@@ -91,6 +88,8 @@ public class DoublePointField extends PointField implements DoubleValueFieldType
     if (val != null) {
       if (f.fieldType().stored() == false && f.fieldType().docValuesType() == DocValuesType.NUMERIC) {
         return Double.longBitsToDouble(val.longValue());
+      } else if (f.fieldType().stored() == false && f.fieldType().docValuesType() == DocValuesType.SORTED_NUMERIC) {
+        return NumericUtils.sortableLongToDouble(val.longValue());
       } else {
         return val;
       }
@@ -107,6 +106,9 @@ public class DoublePointField extends PointField implements DoubleValueFieldType
   @Override
   public Query getSetQuery(QParser parser, SchemaField field, Collection<String> externalVal) {
     assert externalVal.size() > 0;
+    if (!field.indexed()) {
+      return super.getSetQuery(parser, field, externalVal);
+    }
     double[] values = new double[externalVal.size()];
     int i = 0;
     for (String val:externalVal) {
@@ -149,8 +151,7 @@ public class DoublePointField extends PointField implements DoubleValueFieldType
   @Override
   public Type getUninversionType(SchemaField sf) {
     if (sf.multiValued()) {
-      throw new UnsupportedOperationException("MultiValued Point fields with DocValues is not currently supported");
-//      return Type.SORTED_DOUBLE;
+      return Type.SORTED_DOUBLE;
     } else {
       return Type.DOUBLE_POINT;
     }
@@ -161,20 +162,14 @@ public class DoublePointField extends PointField implements DoubleValueFieldType
     field.checkFieldCacheSource();
     return new DoubleFieldSource(field.getName());
   }
-
+  
   @Override
-  public LegacyNumericType getNumericType() {
-    // TODO: refactor this to not use LegacyNumericType
-    return LegacyNumericType.DOUBLE;
+  protected ValueSource getSingleValueSource(SortedNumericSelector.Type choice, SchemaField f) {
+    return new MultiValuedDoubleFieldSource(f.getName(), choice);
   }
 
   @Override
-  public IndexableField createField(SchemaField field, Object value, float boost) {
-    if (!isFieldUsed(field)) return null;
-
-    if (boost != 1.0 && log.isTraceEnabled()) {
-      log.trace("Can't use document/field boost for PointField. Field: " + field.getName() + ", boost: " + boost);
-    }
+  public IndexableField createField(SchemaField field, Object value) {
     double doubleValue = (value instanceof Number) ? ((Number) value).doubleValue() : Double.parseDouble(value.toString());
     return new DoublePoint(field.getName(), doubleValue);
   }

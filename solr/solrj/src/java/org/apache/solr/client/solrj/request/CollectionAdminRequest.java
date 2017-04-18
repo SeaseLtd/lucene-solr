@@ -366,6 +366,7 @@ public abstract class CollectionAdminRequest<T extends CollectionAdminResponse> 
 
     private Properties properties;
     protected Boolean autoAddReplicas;
+    protected Integer realtimeReplicas;
     protected Integer stateFormat;
     private String[] rule , snitch;
 
@@ -407,6 +408,7 @@ public abstract class CollectionAdminRequest<T extends CollectionAdminResponse> 
     public Create setNumShards(Integer numShards) {this.numShards = numShards; return this; }
     public Create setMaxShardsPerNode(Integer numShards) { this.maxShardsPerNode = numShards; return this; }
     public Create setAutoAddReplicas(boolean autoAddReplicas) { this.autoAddReplicas = autoAddReplicas; return this; }
+    public Create setRealtimeReplicas(Integer realtimeReplicas) { this.realtimeReplicas = realtimeReplicas; return this;}
     @Deprecated
     public Create setReplicationFactor(Integer repl) { this.replicationFactor = repl; return this; }
     public Create setStateFormat(Integer stateFormat) { this.stateFormat = stateFormat; return this; }
@@ -421,6 +423,7 @@ public abstract class CollectionAdminRequest<T extends CollectionAdminResponse> 
     public Integer getMaxShardsPerNode() { return maxShardsPerNode; }
     public Integer getReplicationFactor() { return replicationFactor; }
     public Boolean getAutoAddReplicas() { return autoAddReplicas; }
+    public Integer getRealtimeReplicas() { return realtimeReplicas; }
     public Integer getStateFormat() { return stateFormat; }
     
     /**
@@ -506,6 +509,9 @@ public abstract class CollectionAdminRequest<T extends CollectionAdminResponse> 
       }
       if (autoAddReplicas != null) {
         params.set(ZkStateReader.AUTO_ADD_REPLICAS, autoAddReplicas);
+      }
+      if (realtimeReplicas != null) {
+        params.set(ZkStateReader.REALTIME_REPLICAS, realtimeReplicas);
       }
       if(properties != null) {
         addProperties(params, properties);
@@ -606,6 +612,44 @@ public abstract class CollectionAdminRequest<T extends CollectionAdminResponse> 
     }
 
   }
+
+  public static class MoveReplica extends AsyncCollectionAdminRequest {
+    String collection, replica, targetNode;
+    String shard, fromNode;
+    boolean randomlyMoveReplica;
+
+    public MoveReplica(String collection, String replica, String targetNode) {
+      super(CollectionAction.MOVEREPLICA);
+      this.collection = collection;
+      this.replica = replica;
+      this.targetNode = targetNode;
+      this.randomlyMoveReplica = false;
+    }
+
+    public MoveReplica(String collection, String shard, String fromNode, String targetNode) {
+      super(CollectionAction.MOVEREPLICA);
+      this.collection = collection;
+      this.shard = shard;
+      this.fromNode = fromNode;
+      this.targetNode = targetNode;
+      this.randomlyMoveReplica = true;
+    }
+
+    @Override
+    public SolrParams getParams() {
+      ModifiableSolrParams params = (ModifiableSolrParams) super.getParams();
+      params.set("collection", collection);
+      params.set("targetNode", targetNode);
+      if (randomlyMoveReplica) {
+        params.set("shard", shard);
+        params.set("fromNode", fromNode);
+      } else {
+        params.set("replica", replica);
+      }
+      return params;
+    }
+  }
+
 
   /*
    * Returns a RebalanceLeaders object to rebalance leaders for a collection
@@ -2193,6 +2237,20 @@ public abstract class CollectionAdminRequest<T extends CollectionAdminResponse> 
         params.set(ShardParams._ROUTE_, routeKey);
       }
       return params;
+    }
+
+    @Override
+    protected CollectionAdminResponse createResponse(SolrClient client) {
+      return new CollectionAdminResponse();
+    }
+
+  }
+
+  // LISTALIASES request
+  public static class ListAliases extends CollectionAdminRequest<CollectionAdminResponse> {
+
+    public ListAliases() {
+      super(CollectionAction.LISTALIASES);
     }
 
     @Override

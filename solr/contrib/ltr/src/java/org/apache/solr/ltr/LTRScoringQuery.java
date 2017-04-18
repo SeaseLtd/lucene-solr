@@ -300,7 +300,7 @@ public class LTRScoringQuery extends Query {
     return field;
   }
 
-  public class FeatureInfo {
+  public static class FeatureInfo {
     final private String name;
     private float value;
     private boolean used;
@@ -502,7 +502,7 @@ public class LTRScoringQuery extends Query {
       }
 
       @Override
-      public Collection<ChildScorer> getChildren() {
+      public Collection<ChildScorer> getChildren() throws IOException {
         return featureTraversalScorer.getChildren();
       }
 

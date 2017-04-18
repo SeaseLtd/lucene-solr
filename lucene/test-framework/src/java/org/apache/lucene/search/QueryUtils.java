@@ -26,6 +26,7 @@ import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.index.Fields;
+import org.apache.lucene.index.LeafMetaData;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.LeafReaderContext;
@@ -39,6 +40,7 @@ import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.util.Version;
 
 import junit.framework.Assert;
 
@@ -132,27 +134,6 @@ public class QueryUtils {
     }
   }
 
-  /** This is a MultiReader that can be used for randomly wrapping other readers
-   * without creating FieldCache insanity.
-   * The trick is to use an opaque/fake cache key. */
-  public static class FCInvisibleMultiReader extends MultiReader {
-    private final Object cacheKey = new Object();
-
-    public FCInvisibleMultiReader(IndexReader... readers) throws IOException {
-      super(readers);
-    }
-
-    @Override
-    public Object getCoreCacheKey() {
-      return cacheKey;
-    }
-
-    @Override
-    public Object getCombinedCoreAndDeletesKey() {
-      return cacheKey;
-    }
-  }
-
   /**
    * Given an IndexSearcher, returns a new IndexSearcher whose IndexReader
    * is a MultiReader containing the Reader of the original IndexSearcher,
@@ -172,29 +153,23 @@ public class QueryUtils {
     IndexReader[] readers = new IndexReader[] {
       edge < 0 ? r : new MultiReader(),
       new MultiReader(),
-      new FCInvisibleMultiReader(edge < 0 ? emptyReader(4) : new MultiReader(),
+      new MultiReader(edge < 0 ? emptyReader(4) : new MultiReader(),
           new MultiReader(),
           0 == edge ? r : new MultiReader()),
       0 < edge ? new MultiReader() : emptyReader(7),
       new MultiReader(),
-      new FCInvisibleMultiReader(0 < edge ? new MultiReader() : emptyReader(5),
+      new MultiReader(0 < edge ? new MultiReader() : emptyReader(5),
           new MultiReader(),
           0 < edge ? r : new MultiReader())
     };
 
-    IndexSearcher out = LuceneTestCase.newSearcher(new FCInvisibleMultiReader(readers));
+    IndexSearcher out = LuceneTestCase.newSearcher(new MultiReader(readers));
     out.setSimilarity(s.getSimilarity(true));
     return out;
   }
 
   private static IndexReader emptyReader(final int maxDoc) {
     return new LeafReader() {
-
-      @Override
-      public void addCoreClosedListener(CoreClosedListener listener) {}
-
-      @Override
-      public void removeCoreClosedListener(CoreClosedListener listener) {}
 
       @Override
       public Fields fields() throws IOException {
@@ -287,7 +262,17 @@ public class QueryUtils {
       protected void doClose() throws IOException {}
 
       @Override
-      public Sort getIndexSort() {
+      public LeafMetaData getMetaData() {
+        return new LeafMetaData(Version.LATEST.major, Version.LATEST, null);
+      }
+
+      @Override
+      public CacheHelper getCoreCacheHelper() {
+        return null;
+      }
+
+      @Override
+      public CacheHelper getReaderCacheHelper() {
         return null;
       }
     };

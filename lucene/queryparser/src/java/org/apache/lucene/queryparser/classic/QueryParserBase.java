@@ -494,21 +494,6 @@ public abstract class QueryParserBase extends QueryBuilder implements CommonQuer
       if (slop != mpq.getSlop()) {
         query = new MultiPhraseQuery.Builder(mpq).setSlop(slop).build();
       }
-    } else if (query instanceof GraphQuery && ((GraphQuery) query).hasPhrase()) {
-      // we have a graph query that has at least one phrase sub-query
-      // re-build and set slop on all phrase queries
-      List<Query> oldQueries = ((GraphQuery) query).getQueries();
-      Query[] queries = new Query[oldQueries.size()];
-      for (int i = 0; i < queries.length; i++) {
-        Query oldQuery = oldQueries.get(i);
-        if (oldQuery instanceof PhraseQuery) {
-          queries[i] = addSlopToPhrase((PhraseQuery) oldQuery, slop);
-        } else {
-          queries[i] = oldQuery;
-        }
-      }
-
-      query = new GraphQuery(queries);
     }
 
     return query;
@@ -852,7 +837,7 @@ public abstract class QueryParserBase extends QueryBuilder implements CommonQuer
     Query q;
     float fms = fuzzyMinSim;
     try {
-      fms = Float.valueOf(fuzzySlop.image.substring(1)).floatValue();
+      fms = Float.parseFloat(fuzzySlop.image.substring(1));
     } catch (Exception ignored) { }
     if(fms < 0.0f){
       throw new ParseException("Minimum similarity for a FuzzyQuery has to be between 0.0f and 1.0f !");
@@ -868,7 +853,7 @@ public abstract class QueryParserBase extends QueryBuilder implements CommonQuer
     int s = phraseSlop;  // default
     if (fuzzySlop != null) {
       try {
-        s = Float.valueOf(fuzzySlop.image.substring(1)).intValue();
+        s = (int)Float.parseFloat(fuzzySlop.image.substring(1));
       }
       catch (Exception ignored) { }
     }
@@ -880,7 +865,7 @@ public abstract class QueryParserBase extends QueryBuilder implements CommonQuer
     if (boost != null) {
       float f = (float) 1.0;
       try {
-        f = Float.valueOf(boost.image).floatValue();
+        f = Float.parseFloat(boost.image);
       }
       catch (Exception ignored) {
     /* Should this be handled somehow? (defaults to "no boost", if

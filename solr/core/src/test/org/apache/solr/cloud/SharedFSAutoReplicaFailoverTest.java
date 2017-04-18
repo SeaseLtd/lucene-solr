@@ -38,6 +38,7 @@ import org.apache.solr.SolrTestCaseJ4.SuppressSSL;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest.Create;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.response.CollectionAdminResponse;
@@ -85,13 +86,16 @@ public class SharedFSAutoReplicaFailoverTest extends AbstractFullDistribZkTestBa
   
   @BeforeClass
   public static void hdfsFailoverBeforeClass() throws Exception {
+    System.setProperty("solr.hdfs.blockcache.blocksperbank", "512");
     dfsCluster = HdfsTestUtil.setupClass(createTempDir().toFile().getAbsolutePath());
+    System.setProperty("solr.hdfs.blockcache.global", "true"); // always use global cache, this test can create a lot of directories
     schemaString = "schema15.xml"; 
   }
   
   @AfterClass
   public static void hdfsFailoverAfterClass() throws Exception {
     HdfsTestUtil.teardownClass(dfsCluster);
+    System.clearProperty("solr.hdfs.blockcache.blocksperbank");
     dfsCluster = null;
   }
 
@@ -100,6 +104,11 @@ public class SharedFSAutoReplicaFailoverTest extends AbstractFullDistribZkTestBa
   public void setUp() throws Exception {
     super.setUp();
     collectionUlogDirMap.clear();
+    if (random().nextBoolean()) {
+      CollectionAdminRequest.setClusterProperty("legacyCloud", "false").process(cloudClient);
+    } else {
+      CollectionAdminRequest.setClusterProperty("legacyCloud", "true").process(cloudClient);
+    }
   }
   
   @Override
@@ -306,10 +315,33 @@ public class SharedFSAutoReplicaFailoverTest extends AbstractFullDistribZkTestBa
     request.setPath("/admin/collections");
     cloudClient.request(request);
 
-    assertTrue("Timeout waiting for all live and active", ClusterStateUtil.waitForAllActiveAndLiveReplicas(cloudClient.getZkStateReader(), collection1, 60000));
+    assertTrue("Timeout waiting for all live and active", ClusterStateUtil.waitForAllActiveAndLiveReplicas(cloudClient.getZkStateReader(), collection1, 90000));
     assertSliceAndReplicaCount(collection1);
 
     assertUlogDir(collections);
+    
+    // restart all to test core saved state
+    
+    ChaosMonkey.stop(jettys);
+    ChaosMonkey.stop(controlJetty);
+
+    assertTrue("Timeout waiting for all not live", ClusterStateUtil.waitForAllReplicasNotLive(cloudClient.getZkStateReader(), 45000));
+
+    ChaosMonkey.start(jettys);
+    ChaosMonkey.start(controlJetty);
+
+    assertTrue("Timeout waiting for all live and active", ClusterStateUtil.waitForAllActiveAndLiveReplicas(cloudClient.getZkStateReader(), collection1, 120000));
+    
+    assertSliceAndReplicaCount(collection1);
+
+    assertUlogDir(collections);
+    
+    assertSliceAndReplicaCount(collection1);
+    assertSingleReplicationAndShardSize(collection3, 5);
+
+    // all docs should be queried
+    assertSingleReplicationAndShardSize(collection4, 5);
+    queryAndAssertResultSize(collection4, numDocs, 10000);
   }
 
   private void queryAndAssertResultSize(String collection, int expectedResultSize, int timeoutMS)

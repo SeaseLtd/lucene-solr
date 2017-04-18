@@ -75,7 +75,7 @@ public class V2HttpCall extends HttpSolrCall {
 
   protected void init() throws Exception {
     String path = this.path;
-    String fullPath = path = path.substring(3);//strip off '/v2'
+    String fullPath = path = path.substring(7);//strip off '/____v2'
     try {
       pieces = getPathSegments(path);
       if (pieces.size() == 0) {
@@ -136,7 +136,7 @@ public class V2HttpCall extends HttpSolrCall {
       if (isCompositeApi && apiInfo instanceof CompositeApi) {
         ((CompositeApi) this.api).add(apiInfo);
       } else {
-        api = apiInfo;
+        api = apiInfo == null ? api : apiInfo;
       }
       MDCLoggingContext.setCore(core);
       parseRequest();

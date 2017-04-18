@@ -29,12 +29,9 @@ import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.api.Api;
 import org.apache.solr.api.ApiBag;
-import org.easymock.EasyMock;
 
 import static org.apache.solr.common.util.Utils.fromJSONString;
-import static org.easymock.EasyMock.anyBoolean;
-import static org.easymock.EasyMock.anyObject;
-import static org.easymock.EasyMock.getCurrentArguments;
+import static org.mockito.Mockito.*;
 
 public class TestCoreAdminApis extends SolrTestCaseJ4 {
 
@@ -73,41 +70,33 @@ public class TestCoreAdminApis extends SolrTestCaseJ4 {
   }
 
   public static CoreContainer getCoreContainerMock(final Map<String, Object[]> in,Map<String,Object> out ) {
-    CoreContainer mockCC = EasyMock.createMock(CoreContainer.class);
-    EasyMock.reset(mockCC);
-    mockCC.create(anyObject(String.class), anyObject(Path.class) , anyObject(Map.class), anyBoolean());
-    EasyMock.expectLastCall().andAnswer(() -> {
-      in.put("create", getCurrentArguments());
+    CoreContainer mockCC = mock(CoreContainer.class);
+    when(mockCC.create(any(String.class), any(Path.class) , any(Map.class), anyBoolean())).thenAnswer(invocationOnMock -> {
+      in.put("create", invocationOnMock.getArguments());
       return null;
-    }).anyTimes();
-    mockCC.swap(anyObject(String.class), anyObject(String.class));
-    EasyMock.expectLastCall().andAnswer(() -> {
-      in.put("swap", getCurrentArguments());
-      return null;
-    }).anyTimes();
+    });
 
-    mockCC.rename(anyObject(String.class), anyObject(String.class));
-    EasyMock.expectLastCall().andAnswer(() -> {
-      in.put("rename", getCurrentArguments());
+    doAnswer(invocationOnMock -> {
+      in.put("swap", invocationOnMock.getArguments());
       return null;
-    }).anyTimes();
+    }).when(mockCC).swap(any(String.class), any(String.class));
 
-    mockCC.unload(anyObject(String.class), anyBoolean(),
+    doAnswer(invocationOnMock -> {
+      in.put("rename", invocationOnMock.getArguments());
+      return null;
+    }).when(mockCC).rename(any(String.class), any(String.class));
+
+
+    doAnswer(invocationOnMock -> {
+      in.put("unload", invocationOnMock.getArguments());
+      return null;
+    }).when(mockCC).unload(any(String.class), anyBoolean(),
         anyBoolean(), anyBoolean());
-    EasyMock.expectLastCall().andAnswer(() -> {
-      in.put("unload", getCurrentArguments());
-      return null;
-    }).anyTimes();
 
-    mockCC.getCoreRootDirectory();
-    EasyMock.expectLastCall().andAnswer(() -> Paths.get("coreroot")).anyTimes();
-    mockCC.getContainerProperties();
-    EasyMock.expectLastCall().andAnswer(() -> new Properties()).anyTimes();
+    when(mockCC.getCoreRootDirectory()).thenReturn(Paths.get("coreroot"));
+    when(mockCC.getContainerProperties()).thenReturn(new Properties());
 
-    mockCC.getRequestHandlers();
-    EasyMock.expectLastCall().andAnswer(() -> out.get("getRequestHandlers")).anyTimes();
-
-    EasyMock.replay(mockCC);
+    when(mockCC.getRequestHandlers()).thenAnswer(invocationOnMock -> out.get("getRequestHandlers"));
     return mockCC;
   }
 

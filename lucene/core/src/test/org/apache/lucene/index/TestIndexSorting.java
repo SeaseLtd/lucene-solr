@@ -29,6 +29,8 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.MockAnalyzer;
@@ -204,7 +206,7 @@ public class TestIndexSorting extends LuceneTestCase {
     // segment sort is needed
     codec.needsIndexSort = true;
     codec.numCalls = 0;
-    for (int i = 200; i < 300; i++) {
+    for (int i = 201; i < 300; i++) {
       Document doc = new Document();
       doc.add(new StringField("id", Integer.toString(i), Store.YES));
       doc.add(new NumericDocValuesField("id", i));
@@ -1698,7 +1700,6 @@ public class TestIndexSorting extends LuceneTestCase {
     dir.close();
   }
 
-
   // docvalues fields involved in the index sort cannot be updated
   public void testBadDVUpdate() throws Exception {
     Directory dir = newDirectory();
@@ -1940,7 +1941,7 @@ public class TestIndexSorting extends LuceneTestCase {
     @Override
     public long computeNorm(FieldInvertState state) {
       if (state.getName().equals("norms")) {
-        return Float.floatToIntBits(state.getBoost());
+        return state.getLength();
       } else {
         return in.computeNorm(state);
       }
@@ -2022,8 +2023,8 @@ public class TestIndexSorting extends LuceneTestCase {
       positions.setId(id);
       doc.add(new Field("positions", positions, POSITIONS_TYPE));
       doc.add(new NumericDocValuesField("numeric", id));
-      TextField norms = new TextField("norms", Integer.toString(id), Store.NO);
-      norms.setBoost(Float.intBitsToFloat(id));
+      String value = IntStream.range(0, id).mapToObj(k -> Integer.toString(id)).collect(Collectors.joining(" "));
+      TextField norms = new TextField("norms", value, Store.NO);
       doc.add(norms);
       doc.add(new BinaryDocValuesField("binary", new BytesRef(Integer.toString(id))));
       doc.add(new SortedDocValuesField("sorted", new BytesRef(Integer.toString(id))));
@@ -2093,7 +2094,7 @@ public class TestIndexSorting extends LuceneTestCase {
     if (VERBOSE) {
       System.out.println("TEST: now compare r1=" + r1 + " r2=" + r2);
     }
-    assertEquals(sort, getOnlyLeafReader(r2).getIndexSort());
+    assertEquals(sort, getOnlyLeafReader(r2).getMetaData().getSort());
     assertReaderEquals("left: sorted by hand; right: sorted by Lucene", r1, r2);
     IOUtils.close(w1, w2, r1, r2, dir1, dir2);
   }

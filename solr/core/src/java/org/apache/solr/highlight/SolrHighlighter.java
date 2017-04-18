@@ -31,6 +31,7 @@ import java.util.List;
 public abstract class SolrHighlighter
 {
 
+  public static int DEFAULT_MAX_CHARS = 51200;
   public static int DEFAULT_PHRASE_LIMIT = 5000;
 
   /**
@@ -68,7 +69,7 @@ public abstract class SolrHighlighter
       if (fields[0].contains("*")) {
         // create a Java regular expression from the wildcard string
         String fieldRegex = fields[0].replaceAll("\\*", ".*");
-        Collection<String> storedHighlightFieldNames = request.getSearcher().getStoredHighlightFieldNames();
+        Collection<String> storedHighlightFieldNames = request.getSearcher().getDocFetcher().getStoredHighlightFieldNames();
         List<String> storedFieldsToHighlight = new ArrayList<>();
         for (String storedFieldName: storedHighlightFieldNames) {
           if (storedFieldName.matches(fieldRegex)) {
