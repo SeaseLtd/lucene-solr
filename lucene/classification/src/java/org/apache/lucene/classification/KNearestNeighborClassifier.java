@@ -17,6 +17,7 @@
 package org.apache.lucene.classification;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -25,9 +26,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.IndexableField;
@@ -57,6 +55,11 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
    * a {@link MoreLikeThis} instance used to perform MLT queries
    */
   protected final MoreLikeThis mlt;
+
+  /**
+   * a {@link MoreLikeThisParameters} instance used to store MLT parameters
+   */
+  protected final MoreLikeThisParameters mltParams;
 
   /**
    * the name of the fields used as the input text
@@ -103,10 +106,9 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
     this.textFieldNames = textFieldNames;
     this.classFieldName = classFieldName;
     this.mlt = new MoreLikeThis(indexReader);
-    MoreLikeThisParameters mltParameters = new MoreLikeThisParameters();
-    this.mlt.setParameters(mltParameters);
-    mltParameters.setAnalyzer(analyzer);
-    mltParameters.setFieldNames(textFieldNames);
+    this.mltParams = new MoreLikeThisParameters();
+    this.mltParams.setAnalyzer(analyzer);
+    this.mltParams.setFieldNames(textFieldNames);
     this.indexSearcher = new IndexSearcher(indexReader);
     if (similarity != null) {
       this.indexSearcher.setSimilarity(similarity);
@@ -114,10 +116,10 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
       this.indexSearcher.setSimilarity(new BM25Similarity());
     }
     if (minDocsFreq > 0) {
-      mltParameters.setMinDocFreq(minDocsFreq);
+      this.mltParams.setMinDocFreq(minDocsFreq);
     }
     if (minTermFreq > 0) {
-      mltParameters.setMinTermFreq(minTermFreq);
+      this.mltParams.setMinTermFreq(minTermFreq);
     }
     this.query = query;
     this.k = k;
@@ -171,45 +173,21 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
   }
 
   private TopDocs knnSearch(String text) throws IOException {
-    Document textDocument = new Document();
-    for(String fieldName: textFieldNames){
-      textDocument.add(new TextField(fieldName,text, Field.Store.YES));
-    }
-    return knnSearch(textDocument);
-  }
-
-  /**
-   * Returns the top k results from a More Like This query based on the input document
-   *
-   * @param document the document to use for More Like This search
-   * @return the top results for the MLT query
-   * @throws IOException If there is a low-level I/O error
-   */
-  protected TopDocs knnSearch(Document document) throws IOException {
-    MoreLikeThisParameters classificationMltParameters = mlt.getParameters();
     BooleanQuery.Builder mltQuery = new BooleanQuery.Builder();
-    Map<String, Float> fieldToQueryTimeBoostFactor = classificationMltParameters.getFieldToQueryTimeBoostFactor();
-    ArrayList<String> fieldNamesWithNoBoost = new ArrayList<>();
     for (String fieldName : textFieldNames) {
       String boost = null;
+      this.mltParams.enableBoost(true); //terms boost actually helps in MLT queries
       if (fieldName.contains("^")) {
         String[] field2boost = fieldName.split("\\^");
         fieldName = field2boost[0];
         boost = field2boost[1];
       }
-      fieldNamesWithNoBoost.add(fieldName);
-      classificationMltParameters.enableBoost(true); // we want always to use the boost coming from TF * IDF of the term
       if (boost != null) {
-        if(fieldToQueryTimeBoostFactor == null){
-          fieldToQueryTimeBoostFactor = new HashMap<>();
-          classificationMltParameters.setFieldToQueryTimeBoostFactor(fieldToQueryTimeBoostFactor);
-        }
-        fieldToQueryTimeBoostFactor.put(fieldName,Float.parseFloat(boost)); // this is an additional multiplicative boost coming from the field boost
+        this.mltParams.setQueryTimeBoostFactor(Float.parseFloat(boost));//if we have a field boost, we add it
       }
+      mltQuery.add(new BooleanClause(mlt.like(fieldName, text), BooleanClause.Occur.SHOULD));
+      this.mltParams.setQueryTimeBoostFactor(1);// restore neutral boost for next field
     }
-    classificationMltParameters.setFieldNames(fieldNamesWithNoBoost.toArray(textFieldNames));
-    mltQuery.add(mlt.like(document), BooleanClause.Occur.MUST);
-
     Query classFieldQuery = new WildcardQuery(new Term(classFieldName, "*"));
     mltQuery.add(new BooleanClause(classFieldQuery, BooleanClause.Occur.MUST));
     if (query != null) {

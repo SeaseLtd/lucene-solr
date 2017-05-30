@@ -18,11 +18,7 @@
 package org.apache.lucene.queries.mlt.terms.scorer.tfidf;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
 
-import org.apache.lucene.index.NumericDocValues;
-import org.apache.lucene.queries.mlt.terms.scorer.BM25Scorer;
 import org.apache.lucene.queries.mlt.terms.scorer.TFIDFScorer;
 import org.apache.lucene.search.CollectionStatistics;
 import org.apache.lucene.search.TermStatistics;

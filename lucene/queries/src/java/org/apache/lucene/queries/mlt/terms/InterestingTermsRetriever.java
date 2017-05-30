@@ -29,8 +29,8 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queries.mlt.MoreLikeThisParameters;
-import org.apache.lucene.queries.mlt.terms.scorer.BM25Scorer;
 import org.apache.lucene.queries.mlt.terms.scorer.ScoredTerm;
+import org.apache.lucene.queries.mlt.terms.scorer.TFIDFScorer;
 import org.apache.lucene.queries.mlt.terms.scorer.TermScorer;
 import org.apache.lucene.search.CollectionStatistics;
 import org.apache.lucene.search.IndexSearcher;
@@ -42,7 +42,7 @@ import org.apache.lucene.util.SmallFloat;
 public abstract class InterestingTermsRetriever {
 
   protected MoreLikeThisParameters parameters;
-  protected TermScorer interestingTermsScorer = new BM25Scorer();
+  protected TermScorer interestingTermsScorer = new TFIDFScorer();
   protected IndexReader ir;
 
   /**
