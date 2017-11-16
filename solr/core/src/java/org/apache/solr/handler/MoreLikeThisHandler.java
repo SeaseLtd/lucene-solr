@@ -252,7 +252,7 @@ public class MoreLikeThisHandler extends RequestHandlerBase
           dbgQuery = true;
           dbgResults = true;
         }
-        // Copied from StandardRequestHandler... perhaps it should be added to doStandardDebug?
+        // TODO resolve duplicated code with DebugComponent.  Perhaps it should be added to doStandardDebug?
         if (dbg == true) {
           try {
             NamedList<Object> dbgInfo = SolrPluginUtils.doStandardDebug(req, q, mltHelper.getBoostedMLTQuery(), mltDocs.docList, dbgQuery, dbgResults);
@@ -345,7 +345,7 @@ public class MoreLikeThisHandler extends RequestHandlerBase
 
     private Query boostedMLTQuery;
     private BooleanQuery realMLTQuery;
-    
+
     public Query getBoostedMLTQuery(){
       return boostedMLTQuery;
     }
@@ -353,7 +353,7 @@ public class MoreLikeThisHandler extends RequestHandlerBase
     public Query getRealMLTQuery(){
       return realMLTQuery;
     }
-    
+
     public DocListAndSet getMoreLikeThis( int id, int start, int rows, List<Query> filters, List<InterestingTerm> terms, int flags ) throws IOException
     {
       Document doc = reader.document(id);

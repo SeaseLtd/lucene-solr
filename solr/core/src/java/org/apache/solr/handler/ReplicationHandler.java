@@ -68,6 +68,7 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.RateLimiter;
+import org.apache.lucene.util.Version;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrException.ErrorCode;
 import org.apache.solr.common.params.CommonParams;
@@ -81,6 +82,7 @@ import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.common.util.StrUtils;
 import org.apache.solr.common.util.SuppressForbidden;
 import org.apache.solr.core.CloseHook;
+import static org.apache.solr.core.Config.assertWarnOrFail;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.DirectoryFactory.DirContext;
 import org.apache.solr.core.IndexDeletionPolicyWrapper;
@@ -205,7 +207,7 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
 
   private final Map<String, FileInfo> confFileInfoCache = new HashMap<>();
 
-  private Integer reserveCommitDuration = readIntervalMs("00:00:10");
+  private Long reserveCommitDuration = readIntervalMs("00:00:10");
 
   volatile IndexCommit indexCommitPoint;
 
@@ -218,7 +220,7 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
 
   private PollListener pollListener;
   public interface PollListener {
-    void onComplete(SolrCore solrCore, boolean pollSuccess) throws IOException;
+    void onComplete(SolrCore solrCore, IndexFetchResult fetchResult) throws IOException;
   }
 
   /**
@@ -403,6 +405,10 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
     String masterUrl = solrParams == null ? null : solrParams.get(MASTER_URL);
     if (!indexFetchLock.tryLock())
       return IndexFetchResult.LOCK_OBTAIN_FAILED;
+    if (core.getCoreContainer().isShutDown()) {
+      LOG.warn("I was asked to replicate but CoreContainer is shutting down");
+      return IndexFetchResult.CONTAINER_IS_SHUTTING_DOWN; 
+    }
     try {
       if (masterUrl != null) {
         if (currentIndexFetcher != null && currentIndexFetcher != pollingIndexFetcher) {
@@ -684,9 +690,7 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
     }
     rsp.add(CMD_GET_FILE_LIST, result);
 
-    // fetch list of tlog files only if cdcr is activated
-    if (solrParams.getBool(TLOG_FILES, true) && core.getUpdateHandler().getUpdateLog() != null
-        && core.getUpdateHandler().getUpdateLog() instanceof CdcrUpdateLog) {
+    if (solrParams.getBool(TLOG_FILES, false)) {
       try {
         List<Map<String, Object>> tlogfiles = getTlogFileList(commit);
         LOG.info("Adding tlog files to list: " + tlogfiles);
@@ -1176,8 +1180,8 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
       try {
         LOG.debug("Polling for index modifications");
         markScheduledExecutionStart();
-        boolean pollSuccess = doFetch(null, false).getSuccessful();
-        if (pollListener != null) pollListener.onComplete(core, pollSuccess);
+        IndexFetchResult fetchResult = doFetch(null, false);
+        if (pollListener != null) pollListener.onComplete(core, fetchResult);
       } catch (Exception e) {
         LOG.error("Exception in fetching index", e);
       }
@@ -1197,6 +1201,7 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
   public void inform(SolrCore core) {
     this.core = core;
     registerCloseHook();
+    Long deprecatedReserveCommitDuration = null;
     Object nbtk = initArgs.get(NUMBER_BACKUPS_TO_KEEP_INIT_PARAM);
     if(nbtk!=null) {
       numberBackupsToKeep = Integer.parseInt(nbtk.toString());
@@ -1213,7 +1218,7 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
     NamedList master = (NamedList) initArgs.get("master");
     boolean enableMaster = isEnabled( master );
 
-    if (enableMaster || enableSlave) {
+    if (enableMaster || (enableSlave && !currentIndexFetcher.fetchFromLeader)) {
       if (core.getCoreContainer().getZkController() != null) {
         LOG.warn("SolrCloud is enabled for core " + core.getName() + " but so is old-style replication. Make sure you" +
             " intend this behavior, it usually indicates a mis-configuration. Master setting is " +
@@ -1312,10 +1317,26 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
       String reserve = (String) master.get(RESERVE);
       if (reserve != null && !reserve.trim().equals("")) {
         reserveCommitDuration = readIntervalMs(reserve);
+        deprecatedReserveCommitDuration = reserveCommitDuration;
+        // remove this error check & backcompat logic when Version.LUCENE_7_1_0 is removed
+        assertWarnOrFail(
+          "Beginning with Solr 7.1, master."+RESERVE + " is deprecated and should now be configured directly on the ReplicationHandler.",
+          (null == reserve),
+          core.getSolrConfig().luceneMatchVersion.onOrAfter(Version.LUCENE_7_1_0));
       }
-      LOG.info("Commits will be reserved for  " + reserveCommitDuration);
       isMaster = true;
     }
+
+    {
+      final String reserve = (String) initArgs.get(RESERVE);
+      if (reserve != null && !reserve.trim().equals("")) {
+        reserveCommitDuration = readIntervalMs(reserve);
+        if (deprecatedReserveCommitDuration != null) {
+          throw new IllegalArgumentException("'master."+RESERVE+"' and '"+RESERVE+"' are mutually exclusive.");
+        }
+      }
+    }
+    LOG.info("Commits will be reserved for " + reserveCommitDuration + "ms.");
   }
 
   // check master or slave is enabled
@@ -1691,8 +1712,8 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
 
   }
 
-  private static Integer readIntervalMs(String interval) {
-    return (int) TimeUnit.MILLISECONDS.convert(readIntervalNs(interval), TimeUnit.NANOSECONDS);
+  private static Long readIntervalMs(String interval) {
+    return TimeUnit.MILLISECONDS.convert(readIntervalNs(interval), TimeUnit.NANOSECONDS);
   }
 
   private static Long readIntervalNs(String interval) {
@@ -1730,6 +1751,10 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
   public static final String MASTER_URL = "masterUrl";
 
   public static final String FETCH_FROM_LEADER = "fetchFromLeader";
+
+  // in case of TLOG replica, if masterVersion = zero, don't do commit
+  // otherwise updates from current tlog won't copied over properly to the new tlog, leading to data loss
+  public static final String SKIP_COMMIT_ON_MASTER_VERSION_ZERO = "skipCommitOnMasterVersionZero";
 
   public static final String STATUS = "status";
 

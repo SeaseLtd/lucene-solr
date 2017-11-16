@@ -40,6 +40,8 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.util.TestUtil;
+import org.apache.lucene.util.Version;
 
 /**
  * Tests the {@link SimilarityBase}-based Similarities. Contains unit tests and 
@@ -50,7 +52,7 @@ import org.apache.lucene.util.LuceneTestCase;
  * items in the list. If a test case fails, the name of the Similarity that
  * caused the failure is returned as part of the assertion error message.</p>
  * <p>Unit testing is performed by constructing statistics manually and calling
- * the {@link SimilarityBase#score(BasicStats, float, float)} method of the
+ * the {@link SimilarityBase#score(BasicStats, double, double)} method of the
  * Similarities. The statistics represent corner cases of corpus distributions.
  * </p>
  * <p>For the integration tests, a small (8-document) collection is indexed. The
@@ -182,7 +184,17 @@ public class TestSimilarityBase extends LuceneTestCase {
   }
   
   private CollectionStatistics toCollectionStats(BasicStats stats) {
-    return new CollectionStatistics(stats.field, stats.getNumberOfDocuments(), -1, stats.getNumberOfFieldTokens(), -1);
+    long sumTtf = stats.getNumberOfFieldTokens();
+    long sumDf;
+    if (sumTtf == -1) {
+      sumDf = TestUtil.nextLong(random(), stats.getNumberOfDocuments(), 2L * stats.getNumberOfDocuments());
+    } else {
+      sumDf = TestUtil.nextLong(random(), Math.min(stats.getNumberOfDocuments(), sumTtf), sumTtf);
+    }
+    int docCount = Math.toIntExact(Math.min(sumDf, stats.getNumberOfDocuments()));
+    int maxDoc = TestUtil.nextInt(random(), docCount, docCount + 10);
+
+    return new CollectionStatistics(stats.field, maxDoc, docCount, sumTtf, sumDf);
   }
   
   private TermStatistics toTermStats(BasicStats stats) {
@@ -190,17 +202,17 @@ public class TestSimilarityBase extends LuceneTestCase {
   }
   /**
    * The generic test core called by all unit test methods. It calls the
-   * {@link SimilarityBase#score(BasicStats, float, float)} method of all
+   * {@link SimilarityBase#score(BasicStats, double, double)} method of all
    * Similarities in {@link #sims} and checks if the score is valid; i.e. it
    * is a finite positive real number.
    */
   private void unitTestCore(BasicStats stats, float freq, int docLen) {
     for (SimilarityBase sim : sims) {
       BasicStats realStats = (BasicStats) sim.computeWeight(
-          stats.getBoost(),
+          (float)stats.getBoost(),
           toCollectionStats(stats), 
           toTermStats(stats));
-      float score = sim.score(realStats, freq, docLen);
+      float score = (float)sim.score(realStats, freq, docLen);
       float explScore = sim.explain(
           realStats, 1, Explanation.match(freq, "freq"), docLen).getValue();
       assertFalse("Score infinite: " + sim.toString(), Float.isInfinite(score));
@@ -523,17 +535,17 @@ public class TestSimilarityBase extends LuceneTestCase {
   
   /**
    * The generic test core called by all correctness test methods. It calls the
-   * {@link SimilarityBase#score(BasicStats, float, float)} method of all
+   * {@link SimilarityBase#score(BasicStats, double, double)} method of all
    * Similarities in {@link #sims} and compares the score against the manually
    * computed {@code gold}.
    */
   private void correctnessTestCore(SimilarityBase sim, float gold) {
     BasicStats stats = createStats();
     BasicStats realStats = (BasicStats) sim.computeWeight(
-        stats.getBoost(),
+        (float)stats.getBoost(),
         toCollectionStats(stats), 
         toTermStats(stats));
-    float score = sim.score(realStats, FREQ, DOC_LEN);
+    float score = (float) sim.score(realStats, FREQ, DOC_LEN);
     assertEquals(
         sim.toString() + " score not correct.", gold, score, FLOAT_EPSILON);
   }
@@ -586,77 +598,16 @@ public class TestSimilarityBase extends LuceneTestCase {
   
   // LUCENE-5221
   public void testDiscountOverlapsBoost() throws IOException {
-    ClassicSimilarity expected = new ClassicSimilarity();
+    BM25Similarity expected = new BM25Similarity();
     SimilarityBase actual = new DFRSimilarity(new BasicModelIne(), new AfterEffectB(), new NormalizationH2());
     expected.setDiscountOverlaps(false);
     actual.setDiscountOverlaps(false);
-    FieldInvertState state = new FieldInvertState("foo");
+    FieldInvertState state = new FieldInvertState(Version.LATEST.major, "foo");
     state.setLength(5);
     state.setNumOverlap(2);
     assertEquals(expected.computeNorm(state), actual.computeNorm(state));
     expected.setDiscountOverlaps(true);
     actual.setDiscountOverlaps(true);
     assertEquals(expected.computeNorm(state), actual.computeNorm(state));
-  }
-  
-  public void testSaneNormValues() {
-    for (SimilarityBase sim : sims) {
-      for (int i = 0; i < 256; i++) {
-        float len = sim.decodeNormValue((byte) i);
-        assertFalse("negative len: " + len + ", byte=" + i + ", sim=" + sim, len < 0.0f);
-        assertFalse("inf len: " + len + ", byte=" + i + ", sim=" + sim, Float.isInfinite(len));
-        assertFalse("nan len for byte=" + i + ", sim=" + sim, Float.isNaN(len));
-        if (i > 0) {
-          assertTrue("len is not decreasing: " + len + ",byte=" + i + ",sim=" + sim, len < sim.decodeNormValue((byte)(i-1)));
-        }
-      }
-    }
-  }
-  
-  /**
-   * make sure the similarity does not go crazy when tested against all possible norm values.
-   */
-  public void testCrazyIndexTimeBoosts() throws Exception {
-    long avgLength = 750;
-    long docCount = 500000;
-    long numTokens = docCount * avgLength;
-   
-    CollectionStatistics collectionStats = new CollectionStatistics("body", docCount, docCount, numTokens, numTokens);
-    
-    long docFreq = 2000;
-    long totalTermFreq = 2000 * avgLength;
-    
-    TermStatistics termStats = new TermStatistics(new BytesRef("term"), docFreq, totalTermFreq);
-    
-    for (SimilarityBase sim : sims) {
-      if (sim instanceof IBSimilarity) {
-        if (((IBSimilarity)sim).getDistribution() instanceof DistributionSPL) {
-          // score goes infinite for tiny doc lengths and negative for huge doc lengths
-          // TODO: fix this
-          continue;
-        }
-      } else if (sim instanceof DFRSimilarity) {
-        BasicModel model = ((DFRSimilarity)sim).getBasicModel();
-        if (model instanceof BasicModelD || model instanceof BasicModelP) {
-          // score goes NaN for tiny doc lengths
-          // TODO: fix this
-          continue;
-        } else if (model instanceof BasicModelBE) {
-          // score goes negative infinity for tiny doc lengths
-          // TODO: fix this
-          continue;
-        }
-      }
-      BasicStats stats = (BasicStats) sim.computeWeight(1f, collectionStats, termStats);
-      for (float tf = 1.0f; tf <= 10.0f; tf += 1.0f) {
-        for (int i = 0; i < 256; i++) {
-          float len = sim.decodeNormValue((byte) i);
-          float score = sim.score(stats, tf, len);
-          assertFalse("negative score for " + sim + ", len=" + len + ",score=" + score, score < 0.0f);
-          assertFalse("inf score for " + sim + ", len=" + len, Float.isInfinite(score));
-          assertFalse("nan score for " + sim + ", len=" + len, Float.isNaN(score));
-        }
-      }
-    }
   }
 }

@@ -298,7 +298,7 @@ public class LRUQueryCache implements QueryCache, Accountable {
     try {
       Query singleton = uniqueQueries.putIfAbsent(query, query);
       if (singleton == null) {
-        onQueryCache(singleton, LINKED_HASHTABLE_RAM_BYTES_PER_ENTRY + ramBytesUsed(query));
+        onQueryCache(query, LINKED_HASHTABLE_RAM_BYTES_PER_ENTRY + ramBytesUsed(query));
       } else {
         query = singleton;
       }
@@ -722,9 +722,7 @@ public class LRUQueryCache implements QueryCache, Accountable {
         policy.onUse(getQuery());
       }
 
-      // TODO: should it be pluggable, eg. for queries that run on doc values?
-      final IndexReader.CacheHelper cacheHelper = context.reader().getCoreCacheHelper();
-      if (cacheHelper == null) {
+      if (in.isCacheable(context) == false) {
         // this segment is not suitable for caching
         return in.scorerSupplier(context);
       }
@@ -740,6 +738,11 @@ public class LRUQueryCache implements QueryCache, Accountable {
         return in.scorerSupplier(context);
       }
 
+      final IndexReader.CacheHelper cacheHelper = context.reader().getCoreCacheHelper();
+      if (cacheHelper == null) {
+        // this reader has no cache helper
+        return in.scorerSupplier(context);
+      }
       DocIdSet docIdSet;
       try {
         docIdSet = get(in.getQuery(), context, cacheHelper);
@@ -767,7 +770,7 @@ public class LRUQueryCache implements QueryCache, Accountable {
 
       return new ScorerSupplier() {
         @Override
-        public Scorer get(boolean randomAccess) throws IOException {
+        public Scorer get(long LeadCost) throws IOException {
           return new ConstantScoreScorer(CachingWrapperWeight.this, 0f, disi);
         }
         
@@ -785,7 +788,12 @@ public class LRUQueryCache implements QueryCache, Accountable {
       if (scorerSupplier == null) {
         return null;
       }
-      return scorerSupplier.get(false);
+      return scorerSupplier.get(Long.MAX_VALUE);
+    }
+
+    @Override
+    public boolean isCacheable(LeafReaderContext ctx) {
+      return in.isCacheable(ctx);
     }
 
     @Override
@@ -794,9 +802,7 @@ public class LRUQueryCache implements QueryCache, Accountable {
         policy.onUse(getQuery());
       }
 
-      // TODO: should it be pluggable, eg. for queries that run on doc values?
-      final IndexReader.CacheHelper cacheHelper = context.reader().getCoreCacheHelper();
-      if (cacheHelper == null) {
+      if (in.isCacheable(context) == false) {
         // this segment is not suitable for caching
         return in.bulkScorer(context);
       }
@@ -812,6 +818,11 @@ public class LRUQueryCache implements QueryCache, Accountable {
         return in.bulkScorer(context);
       }
 
+      final IndexReader.CacheHelper cacheHelper = context.reader().getCoreCacheHelper();
+      if (cacheHelper == null) {
+        // this reader has no cacheHelper
+        return in.bulkScorer(context);
+      }
       DocIdSet docIdSet;
       try {
         docIdSet = get(in.getQuery(), context, cacheHelper);

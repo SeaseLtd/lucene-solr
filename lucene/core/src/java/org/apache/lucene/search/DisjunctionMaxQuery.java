@@ -137,6 +137,15 @@ public final class DisjunctionMaxQuery extends Query implements Iterable<Query> 
       }
     }
 
+    @Override
+    public boolean isCacheable(LeafReaderContext ctx) {
+      for (Weight w : weights) {
+        if (w.isCacheable(ctx) == false)
+          return false;
+      }
+      return true;
+    }
+
     /** Explain the score we computed for doc */
     @Override
     public Explanation explain(LeafReaderContext context, int doc) throws IOException {
@@ -176,6 +185,14 @@ public final class DisjunctionMaxQuery extends Query implements Iterable<Query> 
   public Query rewrite(IndexReader reader) throws IOException {
     if (disjuncts.length == 1) {
       return disjuncts[0];
+    }
+
+    if (tieBreakerMultiplier == 1.0f) {
+      BooleanQuery.Builder builder = new BooleanQuery.Builder();
+      for (Query sub : disjuncts) {
+        builder.add(sub, BooleanClause.Occur.SHOULD);
+      }
+      return builder.build();
     }
 
     boolean actuallyRewritten = false;

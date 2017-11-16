@@ -92,6 +92,7 @@ import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.solr.client.solrj.cloud.autoscaling.Policy.POLICY;
 import static org.apache.solr.client.solrj.response.RequestStatusState.COMPLETED;
 import static org.apache.solr.client.solrj.response.RequestStatusState.FAILED;
 import static org.apache.solr.client.solrj.response.RequestStatusState.NOT_FOUND;
@@ -101,6 +102,7 @@ import static org.apache.solr.cloud.Overseer.QUEUE_OPERATION;
 import static org.apache.solr.cloud.OverseerCollectionMessageHandler.COLL_CONF;
 import static org.apache.solr.cloud.OverseerCollectionMessageHandler.COLL_PROP_PREFIX;
 import static org.apache.solr.cloud.OverseerCollectionMessageHandler.CREATE_NODE_SET;
+import static org.apache.solr.cloud.OverseerCollectionMessageHandler.CREATE_NODE_SET_EMPTY;
 import static org.apache.solr.cloud.OverseerCollectionMessageHandler.CREATE_NODE_SET_SHUFFLE;
 import static org.apache.solr.cloud.OverseerCollectionMessageHandler.NUM_SLICES;
 import static org.apache.solr.cloud.OverseerCollectionMessageHandler.ONLY_ACTIVE_NODES;
@@ -116,15 +118,19 @@ import static org.apache.solr.common.cloud.DocCollection.STATE_FORMAT;
 import static org.apache.solr.common.cloud.ZkStateReader.AUTO_ADD_REPLICAS;
 import static org.apache.solr.common.cloud.ZkStateReader.COLLECTION_PROP;
 import static org.apache.solr.common.cloud.ZkStateReader.MAX_SHARDS_PER_NODE;
-import static org.apache.solr.common.cloud.ZkStateReader.REALTIME_REPLICAS;
+import static org.apache.solr.common.cloud.ZkStateReader.NRT_REPLICAS;
 import static org.apache.solr.common.cloud.ZkStateReader.PROPERTY_PROP;
 import static org.apache.solr.common.cloud.ZkStateReader.PROPERTY_VALUE_PROP;
+import static org.apache.solr.common.cloud.ZkStateReader.PULL_REPLICAS;
 import static org.apache.solr.common.cloud.ZkStateReader.REPLICATION_FACTOR;
 import static org.apache.solr.common.cloud.ZkStateReader.REPLICA_PROP;
+import static org.apache.solr.common.cloud.ZkStateReader.REPLICA_TYPE;
 import static org.apache.solr.common.cloud.ZkStateReader.SHARD_ID_PROP;
+import static org.apache.solr.common.cloud.ZkStateReader.TLOG_REPLICAS;
 import static org.apache.solr.common.params.CollectionAdminParams.COUNT_PROP;
 import static org.apache.solr.common.params.CollectionParams.CollectionAction.*;
 import static org.apache.solr.common.params.CommonAdminParams.ASYNC;
+import static org.apache.solr.common.params.CommonAdminParams.WAIT_FOR_FINAL_STATE;
 import static org.apache.solr.common.params.CommonParams.NAME;
 import static org.apache.solr.common.params.CommonParams.VALUE_LONG;
 import static org.apache.solr.common.params.CoreAdminParams.DATA_DIR;
@@ -132,6 +138,7 @@ import static org.apache.solr.common.params.CoreAdminParams.DELETE_DATA_DIR;
 import static org.apache.solr.common.params.CoreAdminParams.DELETE_INDEX;
 import static org.apache.solr.common.params.CoreAdminParams.DELETE_INSTANCE_DIR;
 import static org.apache.solr.common.params.CoreAdminParams.INSTANCE_DIR;
+import static org.apache.solr.common.params.CoreAdminParams.ULOG_DIR;
 import static org.apache.solr.common.params.ShardParams._ROUTE_;
 import static org.apache.solr.common.util.StrUtils.formatString;
 
@@ -353,21 +360,19 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
     return Category.ADMIN;
   }
 
-  public static final String SYSTEM_COLL = ".system";
-
   private static void createSysConfigSet(CoreContainer coreContainer) throws KeeperException, InterruptedException {
     SolrZkClient zk = coreContainer.getZkController().getZkStateReader().getZkClient();
     ZkCmdExecutor cmdExecutor = new ZkCmdExecutor(zk.getZkClientTimeout());
     cmdExecutor.ensureExists(ZkStateReader.CONFIGS_ZKNODE, zk);
-    cmdExecutor.ensureExists(ZkStateReader.CONFIGS_ZKNODE + "/" + SYSTEM_COLL, zk);
+    cmdExecutor.ensureExists(ZkStateReader.CONFIGS_ZKNODE + "/" + CollectionAdminParams.SYSTEM_COLL, zk);
 
     try {
-      String path = ZkStateReader.CONFIGS_ZKNODE + "/" + SYSTEM_COLL + "/schema.xml";
-      byte[] data = IOUtils.toByteArray(Thread.currentThread().getContextClassLoader().getResourceAsStream("SystemCollectionSchema.xml"));
+      String path = ZkStateReader.CONFIGS_ZKNODE + "/" + CollectionAdminParams.SYSTEM_COLL + "/schema.xml";
+      byte[] data = IOUtils.toByteArray(CollectionsHandler.class.getResourceAsStream("/SystemCollectionSchema.xml"));
       assert data != null && data.length > 0;
       cmdExecutor.ensureExists(path, data, CreateMode.PERSISTENT, zk);
-      path = ZkStateReader.CONFIGS_ZKNODE + "/" + SYSTEM_COLL + "/solrconfig.xml";
-      data = IOUtils.toByteArray(Thread.currentThread().getContextClassLoader().getResourceAsStream("SystemCollectionSolrConfig.xml"));
+      path = ZkStateReader.CONFIGS_ZKNODE + "/" + CollectionAdminParams.SYSTEM_COLL + "/solrconfig.xml";
+      data = IOUtils.toByteArray(CollectionsHandler.class.getResourceAsStream("/SystemCollectionSolrConfig.xml"));
       assert data != null && data.length > 0;
       cmdExecutor.ensureExists(path, data, CreateMode.PERSISTENT, zk);
     } catch (IOException e) {
@@ -407,7 +412,11 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
           AUTO_ADD_REPLICAS,
           RULE,
           SNITCH,
-          REALTIME_REPLICAS);
+          PULL_REPLICAS,
+          TLOG_REPLICAS,
+          NRT_REPLICAS,
+          POLICY,
+          WAIT_FOR_FINAL_STATE);
 
       if (props.get(STATE_FORMAT) == null) {
         props.put(STATE_FORMAT, "2");
@@ -420,7 +429,7 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
       if (StringUtils.isNotEmpty(shardsParam)) {
         verifyShardsParam(shardsParam);
       }
-      if (SYSTEM_COLL.equals(collectionName)) {
+      if (CollectionAdminParams.SYSTEM_COLL.equals(collectionName)) {
         //We must always create a .system collection with only a single shard
         props.put(NUM_SLICES, 1);
         props.remove(SHARDS_PROP);
@@ -445,9 +454,10 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
       ZkNodeProps leaderProps = docCollection.getLeader(shard);
       ZkCoreNodeProps nodeProps = new ZkCoreNodeProps(leaderProps);
 
-      try (HttpSolrClient client = new Builder(nodeProps.getBaseUrl()).build()) {
-        client.setConnectionTimeout(15000);
-        client.setSoTimeout(60000);
+      try (HttpSolrClient client = new Builder(nodeProps.getBaseUrl())
+          .withConnectionTimeout(15000)
+          .withSocketTimeout(60000)
+          .build()) {
         RequestSyncShard reqSyncShard = new RequestSyncShard();
         reqSyncShard.setCollection(collection);
         reqSyncShard.setShard(shard);
@@ -497,7 +507,8 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
           COLLECTION_PROP,
           SHARD_ID_PROP,
           "split.key",
-          CoreAdminParams.RANGES);
+          CoreAdminParams.RANGES,
+          WAIT_FOR_FINAL_STATE);
       return copyPropertiesWithPrefix(req.getParams(), map, COLL_PROP_PREFIX);
     }),
     DELETESHARD_OP(DELETESHARD, (req, rsp, h) -> {
@@ -524,7 +535,8 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
         throw new SolrException(ErrorCode.BAD_REQUEST, "shards can be added only to 'implicit' collections");
       req.getParams().getAll(map,
           REPLICATION_FACTOR,
-          CREATE_NODE_SET);
+          CREATE_NODE_SET,
+          WAIT_FOR_FINAL_STATE);
       return copyPropertiesWithPrefix(req.getParams(), map, COLL_PROP_PREFIX);
     }),
     DELETEREPLICA_OP(DELETEREPLICA, (req, rsp, h) -> {
@@ -634,7 +646,10 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
           _ROUTE_,
           CoreAdminParams.NAME,
           INSTANCE_DIR,
-          DATA_DIR);
+          DATA_DIR,
+          ULOG_DIR,
+          REPLICA_TYPE,
+          WAIT_FOR_FINAL_STATE);
       return copyPropertiesWithPrefix(req.getParams(), props, COLL_PROP_PREFIX);
     }),
     OVERSEERSTATUS_OP(OVERSEERSTATUS, (req, rsp, h) -> (Map) new LinkedHashMap<>()),
@@ -814,10 +829,19 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
         throw new SolrException(ErrorCode.SERVER_ERROR, "Failed to check the existance of " + uri + ". Is it valid?", ex);
       }
 
+      String createNodeArg = req.getParams().get(CREATE_NODE_SET);
+      if (CREATE_NODE_SET_EMPTY.equals(createNodeArg)) {
+        throw new SolrException(
+            SolrException.ErrorCode.BAD_REQUEST,
+            "Cannot restore with a CREATE_NODE_SET of CREATE_NODE_SET_EMPTY."
+        );
+      }
+
       Map<String, Object> params = req.getParams().getAll(null, NAME, COLLECTION_PROP);
       params.put(CoreAdminParams.BACKUP_LOCATION, location);
       // from CREATE_OP:
-      req.getParams().getAll(params, COLL_CONF, REPLICATION_FACTOR, MAX_SHARDS_PER_NODE, STATE_FORMAT, AUTO_ADD_REPLICAS);
+      req.getParams().getAll(params, COLL_CONF, REPLICATION_FACTOR, MAX_SHARDS_PER_NODE, STATE_FORMAT,
+          AUTO_ADD_REPLICAS, CREATE_NODE_SET, CREATE_NODE_SET_SHUFFLE);
       copyPropertiesWithPrefix(req.getParams(), params, COLL_PROP_PREFIX);
       return params;
     }),
@@ -872,14 +896,27 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
       rsp.add(SolrSnapshotManager.SNAPSHOTS_INFO, snapshots);
       return null;
     }),
-    REPLACENODE_OP(REPLACENODE, (req, rsp, h) -> req.getParams().required().getAll(req.getParams().getAll(null, "parallel"), "source", "target")),
+    REPLACENODE_OP(REPLACENODE, (req, rsp, h) -> {
+      SolrParams params = req.getParams();
+      String sourceNode = params.get(CollectionParams.SOURCE_NODE, params.get("source"));
+      if (sourceNode == null) {
+        throw new SolrException(ErrorCode.BAD_REQUEST, CollectionParams.SOURCE_NODE + " is a require parameter");
+      }
+      String targetNode = params.get(CollectionParams.TARGET_NODE, params.get("target"));
+      if (targetNode == null) {
+        throw new SolrException(ErrorCode.BAD_REQUEST, CollectionParams.TARGET_NODE + " is a require parameter");
+      }
+      return params.getAll(null, "source", "target", WAIT_FOR_FINAL_STATE, CollectionParams.SOURCE_NODE, CollectionParams.TARGET_NODE);
+    }),
     MOVEREPLICA_OP(MOVEREPLICA, (req, rsp, h) -> {
       Map<String, Object> map = req.getParams().required().getAll(null,
           COLLECTION_PROP);
 
       return req.getParams().getAll(map,
-          "fromNode",
-          "targetNode",
+          CollectionParams.FROM_NODE,
+          CollectionParams.SOURCE_NODE,
+          CollectionParams.TARGET_NODE,
+          WAIT_FOR_FINAL_STATE,
           "replica",
           "shard");
     }),
@@ -1014,8 +1051,10 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
     for (int i = 0; i < numRetries; i++) {
       ClusterState clusterState = zkStateReader.getClusterState();
 
-      Collection<Slice> shards = clusterState.getSlices(collectionName);
-      if (shards != null) {
+      final DocCollection docCollection = clusterState.getCollectionOrNull(collectionName);
+      
+      if (docCollection != null && docCollection.getSlices() != null) {
+        Collection<Slice> shards = docCollection.getSlices();
         replicaNotAlive = null;
         for (Slice shard : shards) {
           Collection<Replica> replicas;
@@ -1064,7 +1103,8 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
         }
       }
     }
-    ReplicaAssigner.verifySnitchConf(cc, (List) m.get(SNITCH));
+    if (cc != null && cc.isZooKeeperAware())
+      ReplicaAssigner.verifySnitchConf(cc.getZkController().getSolrCloudManager(), (List) m.get(SNITCH));
   }
 
   /**
@@ -1104,6 +1144,7 @@ public class CollectionsHandler extends RequestHandlerBase implements Permission
       REPLICATION_FACTOR,
       MAX_SHARDS_PER_NODE,
       AUTO_ADD_REPLICAS,
+      POLICY,
       COLL_CONF);
 
   @Override

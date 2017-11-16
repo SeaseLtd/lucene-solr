@@ -191,6 +191,12 @@ public final class SpanNotQuery extends SpanQuery {
     public void extractTerms(Set<Term> terms) {
       includeWeight.extractTerms(terms);
     }
+
+    @Override
+    public boolean isCacheable(LeafReaderContext ctx) {
+      return includeWeight.isCacheable(ctx) && excludeWeight.isCacheable(ctx);
+    }
+
   }
 
   @Override

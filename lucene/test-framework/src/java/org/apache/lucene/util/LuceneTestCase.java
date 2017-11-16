@@ -1183,17 +1183,6 @@ public abstract class LuceneTestCase extends Assert {
     }
     
     if (rarely(r)) {
-      // change buffered deletes parameters
-      boolean limitBufferedDeletes = r.nextBoolean();
-      if (limitBufferedDeletes) {
-        c.setMaxBufferedDeleteTerms(TestUtil.nextInt(r, 1, 1000));
-      } else {
-        c.setMaxBufferedDeleteTerms(IndexWriterConfig.DISABLE_AUTO_FLUSH);
-      }
-      didChange = true;
-    }
-    
-    if (rarely(r)) {
       IndexWriter.IndexReaderWarmer curWarmer = c.getMergedSegmentWarmer();
       if (curWarmer == null || curWarmer instanceof SimpleMergedSegmentWarmer) {
         // change warmer parameters
@@ -2036,15 +2025,9 @@ public abstract class LuceneTestCase extends Assert {
    * checks collection-level statistics on Terms 
    */
   public void assertTermsStatisticsEquals(String info, Terms leftTerms, Terms rightTerms) throws IOException {
-    if (leftTerms.getDocCount() != -1 && rightTerms.getDocCount() != -1) {
-      assertEquals(info, leftTerms.getDocCount(), rightTerms.getDocCount());
-    }
-    if (leftTerms.getSumDocFreq() != -1 && rightTerms.getSumDocFreq() != -1) {
-      assertEquals(info, leftTerms.getSumDocFreq(), rightTerms.getSumDocFreq());
-    }
-    if (leftTerms.getSumTotalTermFreq() != -1 && rightTerms.getSumTotalTermFreq() != -1) {
-      assertEquals(info, leftTerms.getSumTotalTermFreq(), rightTerms.getSumTotalTermFreq());
-    }
+    assertEquals(info, leftTerms.getDocCount(), rightTerms.getDocCount());
+    assertEquals(info, leftTerms.getSumDocFreq(), rightTerms.getSumDocFreq());
+    assertEquals(info, leftTerms.getSumTotalTermFreq(), rightTerms.getSumTotalTermFreq());
     if (leftTerms.size() != -1 && rightTerms.size() != -1) {
       assertEquals(info, leftTerms.size(), rightTerms.size());
     }
@@ -2323,9 +2306,7 @@ public abstract class LuceneTestCase extends Assert {
    */
   public void assertTermStatsEquals(String info, TermsEnum leftTermsEnum, TermsEnum rightTermsEnum) throws IOException {
     assertEquals(info, leftTermsEnum.docFreq(), rightTermsEnum.docFreq());
-    if (leftTermsEnum.totalTermFreq() != -1 && rightTermsEnum.totalTermFreq() != -1) {
-      assertEquals(info, leftTermsEnum.totalTermFreq(), rightTermsEnum.totalTermFreq());
-    }
+    assertEquals(info, leftTermsEnum.totalTermFreq(), rightTermsEnum.totalTermFreq());
   }
   
   /** 
@@ -2676,11 +2657,11 @@ public abstract class LuceneTestCase extends Assert {
       if (expectedType.isInstance(e)) {
         return expectedType.cast(e);
       }
-      AssertionFailedError assertion = new AssertionFailedError("Unexpected exception type, expected " + expectedType.getSimpleName());
+      AssertionFailedError assertion = new AssertionFailedError("Unexpected exception type, expected " + expectedType.getSimpleName() + " but got " + e);
       assertion.initCause(e);
       throw assertion;
     }
-    throw new AssertionFailedError("Expected exception " + expectedType.getSimpleName());
+    throw new AssertionFailedError("Expected exception " + expectedType.getSimpleName() + " but no exception was thrown");
   }
 
   /**

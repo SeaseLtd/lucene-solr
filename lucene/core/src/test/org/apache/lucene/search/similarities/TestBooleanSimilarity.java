@@ -17,6 +17,7 @@
 package org.apache.lucene.search.similarities;
 
 import java.io.IOException;
+import java.util.Random;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field.Store;
@@ -32,10 +33,10 @@ import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
+import org.apache.lucene.util.Version;
 
-public class TestBooleanSimilarity extends LuceneTestCase {
+public class TestBooleanSimilarity extends BaseSimilarityTestCase {
 
   public void testTermScoreIsEqualToBoost() throws IOException {
     Directory dir = newDirectory();
@@ -105,12 +106,17 @@ public class TestBooleanSimilarity extends LuceneTestCase {
     for (int iter = 0; iter < 100; ++iter) {
       final int length = TestUtil.nextInt(random(), 1, 100);
       final int position = random().nextInt(length);
-      final int numOverlaps = random().nextInt(50);
-      FieldInvertState state = new FieldInvertState("foo", position, length, numOverlaps, 100);
+      final int numOverlaps = random().nextInt(length);
+      FieldInvertState state = new FieldInvertState(Version.LATEST.major, "foo", position, length, numOverlaps, 100);
       assertEquals(
           sim2.computeNorm(state),
           sim1.computeNorm(state),
           0f);
     }
+  }
+
+  @Override
+  protected Similarity getSimilarity(Random random) {
+    return new BooleanSimilarity();
   }
 }
