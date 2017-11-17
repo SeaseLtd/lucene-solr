@@ -80,51 +80,19 @@ public class MoreLikeThisTestBase extends LuceneTestCase {
   }
 
   /**
-   * This method will prepare an index on {@link #numDocs} total docs.
-   * Each doc will have a single field with terms up to its sequential number :
+   * This method will prepare an index on {@link #numDocs} total docs ad hoc for More Like This tests.
+   * Each doc will have 2 fields with terms up to its sequential number :
    * <p>
-   * Doc 4
-   * 1a
-   * 2a
-   * 3a
-   * ...
-   * na
-   * <p>
-   * This means that '1a' will have the max docFrequency na
-   * While 'na' will have min docFrequency ( = 1)
-   *
-   * @return
-   * @throws IOException
-   */
-  protected int initIndexWithSingleFieldDocuments() throws IOException {
-    // add series of docs with terms of decreasing df
-    directory = newDirectory();
-    RandomIndexWriter writer = new RandomIndexWriter(random(), directory);
-    for (int i = 1; i <= numDocs; i++) {
-      addDocumentWithSingleField(writer, getArithmeticSeriesWithSuffix(1, i, SUFFIX_A));
-    }
-    reader = writer.getReader();
-    int lastDocId = writer.numDocs() - 1;
-    writer.close();
-    searcher = newSearcher(reader);
-    return lastDocId;
-  }
-
-  /**
-   * This method will prepare an index on {@link #numDocs} total docs.
-   * Each doc will have multiple fields with terms up to its sequential number :
-   * <p>
-   * Doc 4
-   * 1a
-   * 2a
-   * 3a
-   * ...
-   * na
+   * Each field will have terms of linearly increasing term frequency :
+   * Doc3
+   * Field1 : 1a - tf(1a)=1
+   * Field1 : 2a 2a - tf(2a)=2
+   * Field1 : 3a 3a 3a - tf(3a)=3
    * <p>
    * This means that '1a' will have the max docFrequency n
-   * While na will have min docFrequency ( = 1)
+   * While "n"a will have min docFrequency ( = 1)
    * <p>
-   * Each field will have a difference suffix.
+   * Each field will have a difference suffix in the values.
    *
    * @return
    * @throws IOException
@@ -134,22 +102,13 @@ public class MoreLikeThisTestBase extends LuceneTestCase {
     directory = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random(), directory);
     for (int i = 1; i <= numDocs; i++) {
-      addDocument(writer, getArithmeticSeriesWithSuffix(1, i, SUFFIX_A), getArithmeticSeriesWithSuffix(1, i, SUFFIX_B));
+      addDocument(writer, getTriangularArithmeticSeriesWithSuffix(1, i, SUFFIX_A), getTriangularArithmeticSeriesWithSuffix(1, i, SUFFIX_B));
     }
     reader = writer.getReader();
     int lastDocId = writer.numDocs() - 1;
     writer.close();
     searcher = newSearcher(reader);
     return lastDocId;
-  }
-
-  protected int addDocumentWithSingleField(RandomIndexWriter writer, String[] fieldValues) throws IOException {
-    Document doc = new Document();
-    for (String text : fieldValues) {
-      doc.add(newTextField(FIELD1, text, Field.Store.YES));
-    }
-    writer.addDocument(doc);
-    return writer.numDocs() - 1;
   }
 
   protected int addDocument(RandomIndexWriter writer, String[] field1Values, String[] field2Values) throws IOException {
@@ -162,6 +121,27 @@ public class MoreLikeThisTestBase extends LuceneTestCase {
     }
     writer.addDocument(doc);
     return writer.numDocs() - 1;
+  }
+
+  /**
+   * Scope of this init is to index a single document where terms have a term freq >1
+   *
+   * @throws IOException
+   */
+  protected Document getDocumentWithLinearTermFrequencies(int numTermsPerField) throws IOException {
+    Document document = new Document();
+
+    for (String value1 : getTriangularArithmeticSeriesWithSuffix(1, numTermsPerField, "a")) {
+      Field field1 = newTextField(FIELD1, value1, Field.Store.YES);
+      document.add(field1);
+    }
+
+    for (String value2 : getTriangularArithmeticSeriesWithSuffix(1, numTermsPerField, "b")) {
+      Field field2 = newTextField(FIELD2, value2, Field.Store.YES);
+      document.add(field2);
+    }
+
+    return document;
   }
 
   /**
@@ -210,14 +190,6 @@ public class MoreLikeThisTestBase extends LuceneTestCase {
       generatedStrings[i] = singleFieldValue.toString().trim();
     }
     return generatedStrings;
-  }
-
-  protected void assertScoredTermsPriorityOrder(PriorityQueue<ScoredTerm> scoredTerms, Term[] expectedTerms) {
-    for (int i = 0; scoredTerms.top() != null; i++) {
-      ScoredTerm singleTerm = scoredTerms.pop();
-      Term term = new Term(FIELD1, singleTerm.term);
-      assertThat(term, is(expectedTerms[i]));
-    }
   }
 
   protected void assertScoredTermsPriorityOrder(PriorityQueue<ScoredTerm> scoredTerms, Term[] expectedField1Terms, Term[] expectedField2Terms) {

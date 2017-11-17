@@ -94,7 +94,7 @@ public abstract class InterestingTermsRetriever {
    *
    * @param perFieldTermFrequencies a per field map of words keyed on the term(String) with Int objects representing frequencies as the values.
    */
-  public PriorityQueue<ScoredTerm> retrieveInterestingTerms(DocumentTermFrequencies perFieldTermFrequencies) throws IOException {
+  protected PriorityQueue<ScoredTerm> retrieveInterestingTerms(DocumentTermFrequencies perFieldTermFrequencies) throws IOException {
     final int minTermFreq = parameters.getMinTermFreq();
     final int maxQueryTerms = parameters.getMaxQueryTerms();
     final int minDocFreq = parameters.getMinDocFreq();
