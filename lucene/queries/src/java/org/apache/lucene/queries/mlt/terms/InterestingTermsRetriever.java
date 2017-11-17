@@ -116,8 +116,10 @@ public abstract class InterestingTermsRetriever {
 
         final Term currentTerm = new Term(fieldName, word);
         int docFreq = ir.docFreq(currentTerm);
-        final TermStatistics currentTermStat = new TermStatistics(currentTerm.bytes(), docFreq, ir.totalTermFreq(currentTerm));
 
+        if (docFreq == 0) {
+          continue; //term not present in the index for that field, it's not possible to estimate how interesting it is
+        }
         if (minDocFreq > 0 && docFreq < minDocFreq) {
           continue; // filter out words that don't occur in enough docs
         }
@@ -126,10 +128,7 @@ public abstract class InterestingTermsRetriever {
           continue; // filter out words that occur in too many docs
         }
 
-        if (docFreq == 0) {
-          continue; // index update problem?
-        }
-
+        final TermStatistics currentTermStat = new TermStatistics(currentTerm.bytes(), docFreq, ir.totalTermFreq(currentTerm));
         float score = interestingTermsScorer.score(fieldName, fieldStats, currentTermStat, tf);
         // Boost should affect which terms ends up to be interesting
         score = fieldBoost * score;

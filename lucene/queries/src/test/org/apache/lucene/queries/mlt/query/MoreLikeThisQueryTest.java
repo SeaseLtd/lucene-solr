@@ -40,7 +40,7 @@ public class MoreLikeThisQueryTest extends MoreLikeThisTestBase {
   }
 
   @Test
-  public void seedFieldNameConfigured_shouldRewriteUsingSeedFieldName() throws IOException {
+  public void singleSeedFieldName_shouldRewriteUsingSeedFieldName() throws IOException {
     String seedText = "1a 2a 4a 3b";
     queryToTest = new MoreLikeThisQuery(seedText,new String[]{FIELD1}, analyzer);
 
@@ -50,7 +50,7 @@ public class MoreLikeThisQueryTest extends MoreLikeThisTestBase {
   }
 
   @Test
-  public void seedFieldNamesConfigured_shouldRewriteUsingAllFieldNames() throws IOException {
+  public void multipleSeedFieldNames_shouldRewriteUsingAllFieldNames() throws IOException {
     String seedText = "1a 2a 4a 3b";
     queryToTest = new MoreLikeThisQuery(seedText,new String[]{FIELD1,FIELD2}, analyzer);
 

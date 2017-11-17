@@ -340,6 +340,13 @@ public class MoreLikeThisHandler extends RequestHandlerBase
       luceneMltParams.setMaxQueryTerms(     params.getInt(MoreLikeThisParams.MAX_QUERY_TERMS,       MoreLikeThisParameters.DEFAULT_MAX_QUERY_TERMS));
       luceneMltParams.setMaxNumTokensParsed(params.getInt(MoreLikeThisParams.MAX_NUM_TOKENS_PARSED, MoreLikeThisParameters.DEFAULT_MAX_NUM_TOKENS_PARSED));
       luceneMltParams.enableBoost(            params.getBool(MoreLikeThisParams.BOOST, false ) );
+      // There is no default for maxDocFreqPct. Also, it's a bit oddly expressed as an integer value
+      // (percentage of the collection's documents count). We keep Lucene's convention here.
+      if (params.getInt(MoreLikeThisParams.MAX_DOC_FREQ_PCT) != null) {
+        mlt.setMaxDocFreqPct(params.getInt(MoreLikeThisParams.MAX_DOC_FREQ_PCT));
+      }
+
+      boostFields = SolrPluginUtils.parseFieldBoosts(params.getParams(MoreLikeThisParams.QF));
       luceneMltParams.setFieldToQueryTimeBoostFactor(boostFields);
     }
 

@@ -34,12 +34,7 @@ public class DocumentTermFrequencies {
   }
 
   public FieldTermFrequencies get(String fieldName){
-    FieldTermFrequencies requestedTermFrequencies = perFieldTermFrequencies.get(fieldName);
-    if(requestedTermFrequencies == null){
-      requestedTermFrequencies = new FieldTermFrequencies(fieldName);
-      perFieldTermFrequencies.put(fieldName,requestedTermFrequencies);
-    }
-    return requestedTermFrequencies;
+    return perFieldTermFrequencies.computeIfAbsent(fieldName, k -> new FieldTermFrequencies(fieldName));
   }
 
   public Collection<FieldTermFrequencies> getAll(){

@@ -63,7 +63,6 @@ import org.apache.lucene.util.PriorityQueue;
  * Doug
  * </code></pre>
  * <h3>Initial Usage</h3>
- * <p>
  * This class has lots of options to try to make it efficient and flexible.
  * The simplest possible usage is as follows. The bold
  * fragment is specific to this class.
@@ -71,7 +70,6 @@ import org.apache.lucene.util.PriorityQueue;
  * <pre class="prettyprint">
  * IndexReader ir = ...
  * IndexSearcher is = ...
- * <p>
  * MoreLikeThis mlt = new MoreLikeThis(ir);
  * Reader target = ... // orig source of doc you want to find similarities to
  * Query query = mlt.like( target);
@@ -79,7 +77,6 @@ import org.apache.lucene.util.PriorityQueue;
  * Hits hits = is.search(query);
  * // now the usual iteration thru 'hits' - the only thing to watch for is to make sure
  * //you ignore the doc if it matches your 'target' document, as it should be similar to itself
- * <p>
  * </pre>
  * <p>
  * Thus you:
@@ -91,6 +88,7 @@ import org.apache.lucene.util.PriorityQueue;
  * <li> call the searcher to find the similar docs
  * </ol>
  * <br>
+ * <pre>
  * Changes: Mark Harwood 29/02/04
  * Some bugfixing, some refactoring, some optimisation.
  * - bugfix: retrieveTerms(int docNum) was not working for indexes without a termvector -added missing code
@@ -148,6 +146,10 @@ public final class MoreLikeThis {
     this.luceneDocumentTermsRetriever.setParameters(params);
 
     this.queryBuilder.setParameters(params);
+  }
+
+  public void setMaxDocFreqPct(int maxPercentage) {
+    this.params.setMaxDocFreqPct(this.ir,maxPercentage);
   }
 
   /**
