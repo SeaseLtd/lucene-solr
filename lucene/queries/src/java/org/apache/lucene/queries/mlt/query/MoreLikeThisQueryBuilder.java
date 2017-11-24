@@ -60,7 +60,7 @@ public class MoreLikeThisQueryBuilder {
           if(fieldToQueryTimeBoostFactor!=null && fieldToQueryTimeBoostFactor.get(interestingTerm.field)!=null){
             fieldBoost = fieldToQueryTimeBoostFactor.get(interestingTerm.field);
           }
-          minScore = currentScore/fieldBoost; // boost was already applied when finindg interesting terms
+          minScore = currentScore/fieldBoost; // boost was already applied when finding interesting terms
         }
         interestingTermQuery = new BoostQuery(interestingTermQuery, currentScore / minScore);
       }

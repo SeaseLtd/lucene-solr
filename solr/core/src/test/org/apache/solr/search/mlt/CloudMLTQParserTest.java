@@ -84,7 +84,7 @@ public class CloudMLTQParserTest extends SolrCloudTestCase {
         .add(sdoc(id, "27", FIELD1, "bmw usa 535i"))
         .add(sdoc(id, "28", FIELD1, "bmw 750Li"))
         .add(sdoc(id, "29", FIELD1, "bmw usa", FIELD2, "red green blue"))
-        .add(sdoc(id, "30", FIELD1, "The quote red fox jumped over the lazy brown dogs.", FIELD2, "red green yellow"))
+        .add(sdoc(id, "30", FIELD1, "The quote red fox jumped over the lazy brown dogs.", FIELD2, "red red green yellow"))
         .add(sdoc(id, "31", FIELD1, "The fat red fox jumped over the lazy brown dogs.", FIELD2, "green blue yellow"))
         .add(sdoc(id, "32", FIELD1, "The slim red fox jumped over the lazy brown dogs.", FIELD2, "yellow white black"))
         .commit(client, COLLECTION);
