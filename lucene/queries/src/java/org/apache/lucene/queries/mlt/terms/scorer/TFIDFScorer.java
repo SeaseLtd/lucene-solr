@@ -35,7 +35,7 @@ public class TFIDFScorer implements TermScorer {
 
   @Override
   public float score(String fieldName, CollectionStatistics fieldStats, TermStatistics termStats, float termFrequency) throws IOException {
-    float idf = similarity.idf(termStats.docFreq(), fieldStats.docCount());
+    float idf = similarity.idf(termStats.docFreq(), fieldStats.docCount()); //sum doc freq, for distributed
     float score = termFrequency * idf;
     return score;
   }
