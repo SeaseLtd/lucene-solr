@@ -113,10 +113,10 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
     } else {
       this.indexSearcher.setSimilarity(new BM25Similarity());
     }
-    if (minDocsFreq > 0) {
+    if (minDocsFreq >= 0) {
       mltParameters.setMinDocFreq(minDocsFreq);
     }
-    if (minTermFreq > 0) {
+    if (minTermFreq >= 0) {
       mltParameters.setMinTermFreq(minTermFreq);
     }
     this.query = query;
