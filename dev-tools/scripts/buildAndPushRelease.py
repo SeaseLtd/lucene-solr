@@ -53,9 +53,14 @@ def runAndSendGPGPassword(command, password):
       p.stdin.write((password + '\n').encode('UTF-8'))
       p.stdin.write('\n'.encode('UTF-8'))
 
-  result = p.poll()
-  if result != 0:
-    msg = '    FAILED: %s [see log %s]' % (command, LOG)
+  try:
+    result = p.wait(timeout=120)
+    if result != 0:
+      msg = '    FAILED: %s [see log %s]' % (command, LOG)
+      print(msg)
+      raise RuntimeError(msg)
+  except TimeoutExpired:
+    msg = '    FAILED: %s [timed out after 2 minutes; see log %s]' % (command, LOG)
     print(msg)
     raise RuntimeError(msg)
 
@@ -97,8 +102,8 @@ def prepare(root, version, gpgKeyID, gpgPassword):
   print('  Check DOAP files')
   checkDOAPfiles(version)
 
-  print('  ant clean test')
-  run('ant clean test')
+  print('  ant clean test validate documentation-lint')
+  run('ant clean test validate documentation-lint')
 
   open('rev.txt', mode='wb').write(rev.encode('UTF-8'))
   
@@ -293,7 +298,7 @@ def main():
   if c.prepare:
     rev = prepare(c.root, c.version, c.key_id, c.key_password)
   else:
-    os.chdir(root)
+    os.chdir(c.root)
     rev = open('rev.txt', encoding='UTF-8').read()
 
   if c.push_local:

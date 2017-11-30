@@ -27,6 +27,7 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.MultiDocValues;
 import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.SortedDocValues;
+import org.apache.lucene.index.SortedNumericDocValues;
 import org.apache.lucene.search.SimpleCollector;
 import org.apache.lucene.util.BitUtil;
 import org.apache.lucene.util.BytesRef;
@@ -200,7 +201,8 @@ class FacetFieldProcessorByHashDV extends FacetFieldProcessor {
     FieldInfo fieldInfo = fcontext.searcher.getSlowAtomicReader().getFieldInfos().fieldInfo(sf.getName());
     if (fieldInfo != null &&
         fieldInfo.getDocValuesType() != DocValuesType.NUMERIC &&
-        fieldInfo.getDocValuesType() != DocValuesType.SORTED) {
+        fieldInfo.getDocValuesType() != DocValuesType.SORTED &&
+        fieldInfo.getDocValuesType() != DocValuesType.SORTED_NUMERIC) {
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
           getClass()+" only support single valued number/string with docValues");
     }
@@ -370,8 +372,39 @@ class FacetFieldProcessorByHashDV extends FacetFieldProcessor {
 
     } else { // Numeric:
 
-      // TODO support SortedNumericDocValues
-      DocSetUtil.collectSortedDocSet(fcontext.base, fcontext.searcher.getIndexReader(), new SimpleCollector() {
+      if (sf.multiValued()) {
+        DocSetUtil.collectSortedDocSet(fcontext.base, fcontext.searcher.getIndexReader(), new SimpleCollector() {
+          SortedNumericDocValues values = null; //NN
+
+          @Override public boolean needsScores() { return false; }
+
+          @Override
+          protected void doSetNextReader(LeafReaderContext ctx) throws IOException {
+            setNextReaderFirstPhase(ctx);
+            values = DocValues.getSortedNumeric(ctx.reader(), sf.getName());
+          }
+
+          @Override
+          public void collect(int segDoc) throws IOException {
+            if (segDoc > values.docID()) {
+              values.advance(segDoc);
+            }
+            if (segDoc == values.docID()) {
+              long l = values.nextValue(); // This document must have at least one value
+              collectValFirstPhase(segDoc, l);
+              for (int i = 1; i < values.docValueCount(); i++) {
+                long lnew = values.nextValue();
+                if (lnew != l) { // Skip the value if it's equal to the last one, we don't want to double-count it
+                  collectValFirstPhase(segDoc, lnew);
+                }
+                l = lnew;
+              }
+
+            }
+          }
+        });
+      } else {
+        DocSetUtil.collectSortedDocSet(fcontext.base, fcontext.searcher.getIndexReader(), new SimpleCollector() {
           NumericDocValues values = null; //NN
 
           @Override public boolean needsScores() { return false; }
@@ -392,6 +425,7 @@ class FacetFieldProcessorByHashDV extends FacetFieldProcessor {
             }
           }
         });
+      }
     }
   }
 

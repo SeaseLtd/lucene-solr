@@ -68,7 +68,6 @@ import org.apache.lucene.index.IndexDeletionPolicy;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
@@ -83,6 +82,7 @@ import org.apache.solr.common.cloud.ClusterState;
 import org.apache.solr.common.cloud.DocCollection;
 import org.apache.solr.common.cloud.Slice;
 import org.apache.solr.common.cloud.SolrZkClient;
+import org.apache.solr.common.params.CollectionAdminParams;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.CommonParams.EchoParamStyle;
 import org.apache.solr.common.params.SolrParams;
@@ -100,6 +100,7 @@ import org.apache.solr.core.snapshots.SolrSnapshotMetaDataManager.SnapshotMetaDa
 import org.apache.solr.handler.IndexFetcher;
 import org.apache.solr.handler.ReplicationHandler;
 import org.apache.solr.handler.RequestHandlerBase;
+import org.apache.solr.handler.SolrConfigHandler;
 import org.apache.solr.handler.component.HighlightComponent;
 import org.apache.solr.handler.component.SearchComponent;
 import org.apache.solr.logging.MDCLoggingContext;
@@ -222,7 +223,7 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
   private Counter newSearcherOtherErrorsCounter;
   private final CoreContainer coreContainer;
 
-  private Set<String> metricNames = new HashSet<>();
+  private Set<String> metricNames = ConcurrentHashMap.newKeySet();
 
   public Set<String> getMetricNames() {
     return metricNames;
@@ -248,18 +249,7 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
   }
 
   static int boolean_query_max_clause_count = Integer.MIN_VALUE;
-  
-  // only change the BooleanQuery maxClauseCount once for ALL cores...
-  void booleanQueryMaxClauseCount()  {
-    synchronized(SolrCore.class) {
-      if (boolean_query_max_clause_count == Integer.MIN_VALUE) {
-        boolean_query_max_clause_count = solrConfig.booleanQueryMaxClauseCount;
-        BooleanQuery.setMaxClauseCount(boolean_query_max_clause_count);
-      } else if (boolean_query_max_clause_count != solrConfig.booleanQueryMaxClauseCount ) {
-        log.debug("BooleanQuery.maxClauseCount={}, ignoring {}", boolean_query_max_clause_count, solrConfig.booleanQueryMaxClauseCount);
-      }
-    }
-  }
+
 
   /**
    * The SolrResourceLoader used to load all resources for this core.
@@ -930,8 +920,6 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
     this.maxWarmingSearchers = config.maxWarmingSearchers;
     this.slowQueryThresholdMillis = config.slowQueryThresholdMillis;
 
-    booleanQueryMaxClauseCount();
-
     final CountDownLatch latch = new CountDownLatch(1);
 
     try {
@@ -1146,11 +1134,11 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
     manager.registerGauge(this, registry, () -> startTime, true, "startTime", Category.CORE.toString());
     manager.registerGauge(this, registry, () -> getOpenCount(), true, "refCount", Category.CORE.toString());
     manager.registerGauge(this, registry, () -> resourceLoader.getInstancePath().toString(), true, "instanceDir", Category.CORE.toString());
-    manager.registerGauge(this, registry, () -> getIndexDir(), true, "indexDir", Category.CORE.toString());
-    manager.registerGauge(this, registry, () -> getIndexSize(), true, "sizeInBytes", Category.INDEX.toString());
-    manager.registerGauge(this, registry, () -> NumberUtils.readableSize(getIndexSize()), true, "size", Category.INDEX.toString());
+    manager.registerGauge(this, registry, () -> isClosed() ? "(closed)" : getIndexDir(), true, "indexDir", Category.CORE.toString());
+    manager.registerGauge(this, registry, () -> isClosed() ? 0 : getIndexSize(), true, "sizeInBytes", Category.INDEX.toString());
+    manager.registerGauge(this, registry, () -> isClosed() ? "(closed)" : NumberUtils.readableSize(getIndexSize()), true, "size", Category.INDEX.toString());
     if (coreContainer != null) {
-      manager.registerGauge(this, registry, () -> coreContainer.getCoreNames(this), true, "aliases", Category.CORE.toString());
+      manager.registerGauge(this, registry, () -> coreContainer.getNamesForCore(this), true, "aliases", Category.CORE.toString());
       final CloudDescriptor cd = getCoreDescriptor().getCloudDescriptor();
       if (cd != null) {
         manager.registerGauge(this, registry, () -> {
@@ -1175,6 +1163,15 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
     File dataDirFile = dataDirPath.toFile();
     manager.registerGauge(this, registry, () -> dataDirFile.getTotalSpace(), true, "totalSpace", Category.CORE.toString(), "fs");
     manager.registerGauge(this, registry, () -> dataDirFile.getUsableSpace(), true, "usableSpace", Category.CORE.toString(), "fs");
+    manager.registerGauge(this, registry, () -> dataDirPath.toAbsolutePath().toString(), true, "path", Category.CORE.toString(), "fs");
+    manager.registerGauge(this, registry, () -> {
+      try {
+        return org.apache.lucene.util.IOUtils.spins(dataDirPath.toAbsolutePath());
+      } catch (IOException e) {
+        // default to spinning
+        return true;
+      }
+    }, true, "spins", Category.CORE.toString(), "fs");
   }
 
   private void checkVersionFieldExistsInSchema(IndexSchema schema, CoreDescriptor coreDescriptor) {
@@ -1492,6 +1489,16 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
     }
     log.info(logid+" CLOSING SolrCore " + this);
 
+    // stop reporting metrics
+    try {
+      coreMetricManager.close();
+    } catch (Throwable e) {
+      SolrException.log(log, e);
+      if (e instanceof  Error) {
+        throw (Error) e;
+      }
+    }
+
     if( closeHooks != null ) {
        for( CloseHook hook : closeHooks ) {
          try {
@@ -1586,15 +1593,6 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
     } catch (Throwable e) {
       SolrException.log(log, e);
       if (e instanceof Error) {
-        throw (Error) e;
-      }
-    }
-
-    try {
-      coreMetricManager.close();
-    } catch (Throwable e) {
-      SolrException.log(log, e);
-      if (e instanceof  Error) {
         throw (Error) e;
       }
     }
@@ -2578,8 +2576,8 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
   static{
     HashMap<String, QueryResponseWriter> m= new HashMap<>(15, 1);
     m.put("xml", new XMLResponseWriter());
-    m.put("standard", m.get("xml"));
     m.put(CommonParams.JSON, new JSONResponseWriter());
+    m.put("standard", m.get(CommonParams.JSON));
     m.put("geojson", new GeoJSONResponseWriter());
     m.put("graphml", new GraphMLResponseWriter());
     m.put("python", new PythonResponseWriter());
@@ -2945,10 +2943,19 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
           checkStale(zkClient, solrConfigPath, overlayVersion) ||
           checkStale(zkClient, managedSchmaResourcePath, managedSchemaVersion)) {
         log.info("core reload {}", coreName);
-        try {
-          cc.reload(coreName);
-        } catch (SolrCoreState.CoreIsClosedException e) {
-          /*no problem this core is already closed*/
+        SolrConfigHandler configHandler = ((SolrConfigHandler)core.getRequestHandler("/config"));
+        if (configHandler.getReloadLock().tryLock()){
+          
+          try {
+            cc.reload(coreName);
+          } catch (SolrCoreState.CoreIsClosedException e) {
+            /*no problem this core is already closed*/
+          } finally {
+            configHandler.getReloadLock().unlock();
+          }
+        
+        } else {
+          log.info("Another reload is in progress. Not doing anything.");
         }
         return;
       }
@@ -3039,7 +3046,8 @@ public final class SolrCore implements SolrInfoBean, SolrMetricProducer, Closeab
    * processing. The Decoder will only run on the first invocations, subsequent invocations will return the 
    * cached object. 
    * 
-   * @param key A key in the format of name/version for a blob stored in the .system blob store via the Blob Store API
+   * @param key A key in the format of name/version for a blob stored in the
+   *            {@link CollectionAdminParams#SYSTEM_COLL} blob store via the Blob Store API
    * @param decoder a decoder with which to convert the blob into a Java Object representation (first time only)
    * @return a reference to the blob that has already cached the decoded version.
    */

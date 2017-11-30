@@ -241,8 +241,8 @@ public class TestCoreContainer extends SolrTestCaseJ4 {
     final CoreContainer cc = init(CONFIGSETS_SOLR_XML);
     try {
       ClassLoader sharedLoader = cc.loader.getClassLoader();
-      ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
-      assertSame(contextLoader, sharedLoader.getParent());
+      ClassLoader baseLoader = SolrResourceLoader.class.getClassLoader();
+      assertSame(baseLoader, sharedLoader.getParent());
 
       SolrCore core1 = cc.create("core1", ImmutableMap.of("configSet", "minimal"));
       ClassLoader coreLoader = core1.getResourceLoader().getClassLoader();
@@ -384,11 +384,6 @@ public class TestCoreContainer extends SolrTestCaseJ4 {
     @Override
     public List<CoreDescriptor> discover(CoreContainer cc) {
       return cores;
-    }
-
-    @Override
-    public CoreDescriptor reload(CoreContainer cc, CoreDescriptor cd) {
-      return cd;
     }
 
   }

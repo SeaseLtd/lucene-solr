@@ -27,7 +27,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.codecs.DocValuesConsumer;
 import org.apache.lucene.codecs.DocValuesFormat;
 import org.apache.lucene.codecs.NormsConsumer;
@@ -603,7 +602,7 @@ final class DefaultIndexingChain extends DocConsumer {
       // PerField.invert to allow for later downgrading of the index options:
       fi.setIndexOptions(fieldType.indexOptions());
       
-      fp = new PerField(fi, invert);
+      fp = new PerField(docWriter.getIndexCreatedVersionMajor(), fi, invert);
       fp.next = fieldHash[hashPos];
       fieldHash[hashPos] = fp;
       totalFieldCount++;
@@ -633,6 +632,7 @@ final class DefaultIndexingChain extends DocConsumer {
   /** NOTE: not static: accesses at least docState, termsHash. */
   private final class PerField implements Comparable<PerField> {
 
+    final int indexCreatedVersionMajor;
     final FieldInfo fieldInfo;
     final Similarity similarity;
 
@@ -659,7 +659,8 @@ final class DefaultIndexingChain extends DocConsumer {
     // reused
     TokenStream tokenStream;
 
-    public PerField(FieldInfo fieldInfo, boolean invert) {
+    public PerField(int indexCreatedVersionMajor, FieldInfo fieldInfo, boolean invert) {
+      this.indexCreatedVersionMajor = indexCreatedVersionMajor;
       this.fieldInfo = fieldInfo;
       similarity = docState.similarity;
       if (invert) {
@@ -668,7 +669,7 @@ final class DefaultIndexingChain extends DocConsumer {
     }
 
     void setInvertState() {
-      invertState = new FieldInvertState(fieldInfo.name);
+      invertState = new FieldInvertState(indexCreatedVersionMajor, fieldInfo.name);
       termsHashPerField = termsHash.addField(invertState, fieldInfo);
       if (fieldInfo.omitsNorms() == false) {
         assert norms == null;
@@ -731,7 +732,6 @@ final class DefaultIndexingChain extends DocConsumer {
         stream.reset();
         invertState.setAttributeSource(stream);
         termsHashPerField.start(field, first);
-        CharTermAttribute termAtt = tokenStream.getAttribute(CharTermAttribute.class);
 
         while (stream.incrementToken()) {
 
@@ -768,10 +768,12 @@ final class DefaultIndexingChain extends DocConsumer {
           }
           invertState.lastStartOffset = startOffset;
 
-          invertState.length++;
-          if (invertState.length < 0) {
-            throw new IllegalArgumentException("too many tokens in field '" + field.name() + "'");
+          try {
+            invertState.length = Math.addExact(invertState.length, invertState.termFreqAttribute.getTermFrequency());
+          } catch (ArithmeticException ae) {
+            throw new IllegalArgumentException("too many tokens for field \"" + field.name() + "\"");
           }
+          
           //System.out.println("  term=" + invertState.termAttribute);
 
           // If we hit an exception in here, we abort

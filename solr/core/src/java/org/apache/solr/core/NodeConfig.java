@@ -33,6 +33,8 @@ public class NodeConfig {
 
   private final Path coreRootDirectory;
 
+  private final Path solrDataHome;
+
   private final Path configSetBaseDirectory;
 
   private final String sharedLibDirectory;
@@ -44,6 +46,8 @@ public class NodeConfig {
   private final String coreAdminHandlerClass;
 
   private final String collectionsAdminHandlerClass;
+
+  private final String healthCheckHandlerClass;
 
   private final String infoHandlerClass;
 
@@ -65,28 +69,28 @@ public class NodeConfig {
 
   private final PluginInfo[] backupRepositoryPlugins;
 
-  private final PluginInfo[] metricReporterPlugins;
-
-  private final Set<String> hiddenSysProps;
+  private final MetricsConfig metricsConfig;
 
   private final PluginInfo transientCacheConfig;
 
-  private NodeConfig(String nodeName, Path coreRootDirectory, Path configSetBaseDirectory, String sharedLibDirectory,
+  private NodeConfig(String nodeName, Path coreRootDirectory, Path solrDataHome, Path configSetBaseDirectory, String sharedLibDirectory,
                      PluginInfo shardHandlerFactoryConfig, UpdateShardHandlerConfig updateShardHandlerConfig,
                      String coreAdminHandlerClass, String collectionsAdminHandlerClass,
-                     String infoHandlerClass, String configSetsHandlerClass,
+                     String healthCheckHandlerClass, String infoHandlerClass, String configSetsHandlerClass,
                      LogWatcherConfig logWatcherConfig, CloudConfig cloudConfig, Integer coreLoadThreads,
                      int transientCacheSize, boolean useSchemaCache, String managementPath, SolrResourceLoader loader,
                      Properties solrProperties, PluginInfo[] backupRepositoryPlugins,
-                     PluginInfo[] metricReporterPlugins, Set<String> hiddenSysProps, PluginInfo transientCacheConfig) {
+                     MetricsConfig metricsConfig, PluginInfo transientCacheConfig) {
     this.nodeName = nodeName;
     this.coreRootDirectory = coreRootDirectory;
+    this.solrDataHome = solrDataHome;
     this.configSetBaseDirectory = configSetBaseDirectory;
     this.sharedLibDirectory = sharedLibDirectory;
     this.shardHandlerFactoryConfig = shardHandlerFactoryConfig;
     this.updateShardHandlerConfig = updateShardHandlerConfig;
     this.coreAdminHandlerClass = coreAdminHandlerClass;
     this.collectionsAdminHandlerClass = collectionsAdminHandlerClass;
+    this.healthCheckHandlerClass = healthCheckHandlerClass;
     this.infoHandlerClass = infoHandlerClass;
     this.configSetsHandlerClass = configSetsHandlerClass;
     this.logWatcherConfig = logWatcherConfig;
@@ -98,8 +102,7 @@ public class NodeConfig {
     this.loader = loader;
     this.solrProperties = solrProperties;
     this.backupRepositoryPlugins = backupRepositoryPlugins;
-    this.metricReporterPlugins = metricReporterPlugins;
-    this.hiddenSysProps = hiddenSysProps;
+    this.metricsConfig = metricsConfig;
     this.transientCacheConfig = transientCacheConfig;
 
     if (this.cloudConfig != null && this.getCoreLoadThreadCount(false) < 2) {
@@ -114,6 +117,10 @@ public class NodeConfig {
 
   public Path getCoreRootDirectory() {
     return coreRootDirectory;
+  }
+
+  public Path getSolrDataHome() {
+    return solrDataHome;
   }
 
   public PluginInfo getShardHandlerFactoryPluginInfo() {
@@ -140,6 +147,10 @@ public class NodeConfig {
   
   public String getCollectionsHandlerClass() {
     return collectionsAdminHandlerClass;
+  }
+
+  public String getHealthCheckHandlerClass() {
+    return healthCheckHandlerClass;
   }
 
   public String getInfoHandlerClass() {
@@ -189,12 +200,8 @@ public class NodeConfig {
     return backupRepositoryPlugins;
   }
 
-  public PluginInfo[] getMetricReporterPlugins() {
-    return metricReporterPlugins;
-  }
-
-  public Set<String> getHiddenSysProps() {
-    return hiddenSysProps;
+  public MetricsConfig getMetricsConfig() {
+    return metricsConfig;
   }
 
   public PluginInfo getTransientCachePluginInfo() { return transientCacheConfig; }
@@ -202,12 +209,14 @@ public class NodeConfig {
   public static class NodeConfigBuilder {
 
     private Path coreRootDirectory;
+    private Path solrDataHome;
     private Path configSetBaseDirectory;
     private String sharedLibDirectory = "lib";
     private PluginInfo shardHandlerFactoryConfig;
     private UpdateShardHandlerConfig updateShardHandlerConfig = UpdateShardHandlerConfig.DEFAULT;
     private String coreAdminHandlerClass = DEFAULT_ADMINHANDLERCLASS;
     private String collectionsAdminHandlerClass = DEFAULT_COLLECTIONSHANDLERCLASS;
+    private String healthCheckHandlerClass = DEFAULT_HEALTHCHECKHANDLERCLASS;
     private String infoHandlerClass = DEFAULT_INFOHANDLERCLASS;
     private String configSetsHandlerClass = DEFAULT_CONFIGSETSHANDLERCLASS;
     private LogWatcherConfig logWatcherConfig = new LogWatcherConfig(true, null, null, 50);
@@ -220,8 +229,7 @@ public class NodeConfig {
     private String managementPath;
     private Properties solrProperties = new Properties();
     private PluginInfo[] backupRepositoryPlugins;
-    private PluginInfo[] metricReporterPlugins;
-    private Set<String> hiddenSysProps = new HashSet<>(DEFAULT_HIDDEN_SYS_PROPS);
+    private MetricsConfig metricsConfig;
     private PluginInfo transientCacheConfig;
 
     private final SolrResourceLoader loader;
@@ -236,6 +244,7 @@ public class NodeConfig {
     private static final String DEFAULT_ADMINHANDLERCLASS = "org.apache.solr.handler.admin.CoreAdminHandler";
     private static final String DEFAULT_INFOHANDLERCLASS = "org.apache.solr.handler.admin.InfoHandler";
     private static final String DEFAULT_COLLECTIONSHANDLERCLASS = "org.apache.solr.handler.admin.CollectionsHandler";
+    private static final String DEFAULT_HEALTHCHECKHANDLERCLASS = "org.apache.solr.handler.admin.HealthCheckHandler";
     private static final String DEFAULT_CONFIGSETSHANDLERCLASS = "org.apache.solr.handler.admin.ConfigSetsHandler";
 
     public static final Set<String> DEFAULT_HIDDEN_SYS_PROPS = new HashSet<>(Arrays.asList(
@@ -250,11 +259,25 @@ public class NodeConfig {
       this.nodeName = nodeName;
       this.loader = loader;
       this.coreRootDirectory = loader.getInstancePath();
+      // always init from sysprop because <solrDataHome> config element may be missing
+      String dataHomeProperty = System.getProperty(SolrXmlConfig.SOLR_DATA_HOME);
+      if (dataHomeProperty != null && !dataHomeProperty.isEmpty()) {
+        solrDataHome = loader.getInstancePath().resolve(dataHomeProperty);
+      }
       this.configSetBaseDirectory = loader.getInstancePath().resolve("configsets");
+      this.metricsConfig = new MetricsConfig.MetricsConfigBuilder().build();
     }
 
     public NodeConfigBuilder setCoreRootDirectory(String coreRootDirectory) {
       this.coreRootDirectory = loader.getInstancePath().resolve(coreRootDirectory);
+      return this;
+    }
+
+    public NodeConfigBuilder setSolrDataHome(String solrDataHomeString) {
+      // keep it null unless explicitly set to non-empty value
+      if (solrDataHomeString != null && !solrDataHomeString.isEmpty()) {
+        this.solrDataHome = loader.getInstancePath().resolve(solrDataHomeString);
+      }
       return this;
     }
 
@@ -285,6 +308,11 @@ public class NodeConfig {
 
     public NodeConfigBuilder setCollectionsAdminHandlerClass(String collectionsAdminHandlerClass) {
       this.collectionsAdminHandlerClass = collectionsAdminHandlerClass;
+      return this;
+    }
+
+    public NodeConfigBuilder setHealthCheckHandlerClass(String healthCheckHandlerClass) {
+      this.healthCheckHandlerClass = healthCheckHandlerClass;
       return this;
     }
 
@@ -340,8 +368,8 @@ public class NodeConfig {
       return this;
     }
 
-    public NodeConfigBuilder setMetricReporterPlugins(PluginInfo[] metricReporterPlugins) {
-      this.metricReporterPlugins = metricReporterPlugins;
+    public NodeConfigBuilder setMetricsConfig(MetricsConfig metricsConfig) {
+      this.metricsConfig = metricsConfig;
       return this;
     }
     
@@ -350,16 +378,11 @@ public class NodeConfig {
       return this;
     }
 
-    public NodeConfigBuilder setHiddenSysProps(Set<String> hiddenSysProps) {
-      this.hiddenSysProps = hiddenSysProps;
-      return this;
-    }
-
     public NodeConfig build() {
-      return new NodeConfig(nodeName, coreRootDirectory, configSetBaseDirectory, sharedLibDirectory, shardHandlerFactoryConfig,
-                            updateShardHandlerConfig, coreAdminHandlerClass, collectionsAdminHandlerClass, infoHandlerClass, configSetsHandlerClass,
+      return new NodeConfig(nodeName, coreRootDirectory, solrDataHome, configSetBaseDirectory, sharedLibDirectory, shardHandlerFactoryConfig,
+                            updateShardHandlerConfig, coreAdminHandlerClass, collectionsAdminHandlerClass, healthCheckHandlerClass, infoHandlerClass, configSetsHandlerClass,
                             logWatcherConfig, cloudConfig, coreLoadThreads, transientCacheSize, useSchemaCache, managementPath, loader, solrProperties,
-                            backupRepositoryPlugins, metricReporterPlugins, hiddenSysProps, transientCacheConfig);
+                            backupRepositoryPlugins, metricsConfig, transientCacheConfig);
     }
   }
 }

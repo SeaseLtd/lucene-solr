@@ -60,7 +60,7 @@ public final class FunctionScoreQuery extends Query {
     Weight inner = in.createWeight(searcher, needsScores && source.needsScores(), 1f);
     if (needsScores == false)
       return inner;
-    return new FunctionScoreWeight(this, inner, source, boost);
+    return new FunctionScoreWeight(this, inner, source.rewrite(searcher), boost);
   }
 
   @Override
@@ -113,22 +113,10 @@ public final class FunctionScoreQuery extends Query {
       Scorer scorer = inner.scorer(context);
       if (scorer.iterator().advance(doc) != doc)
         return Explanation.noMatch("No match");
-      DoubleValues scores = valueSource.getValues(context, DoubleValuesSource.fromScorer(scorer));
-      scores.advanceExact(doc);
-      Explanation scoreExpl = scoreExplanation(context, doc, scores);
-      if (boost == 1f)
-        return scoreExpl;
-      return Explanation.match(scoreExpl.getValue() * boost, "product of:",
-          Explanation.match(boost, "boost"), scoreExpl);
-    }
-
-    private Explanation scoreExplanation(LeafReaderContext context, int doc, DoubleValues scores) throws IOException {
-      if (valueSource.needsScores() == false)
-        return Explanation.match((float) scores.doubleValue(), valueSource.toString());
-      float score = (float) scores.doubleValue();
-      return Explanation.match(score, "computed from:",
-          Explanation.match(score, valueSource.toString()),
-          inner.explain(context, doc));
+      Explanation scoreExplanation = inner.explain(context, doc);
+      Explanation expl = valueSource.explain(context, doc, scoreExplanation);
+      return Explanation.match(expl.getValue() * boost, "product of:",
+          Explanation.match(boost, "boost"), expl);
     }
 
     @Override
@@ -147,5 +135,11 @@ public final class FunctionScoreQuery extends Query {
         }
       };
     }
+
+    @Override
+    public boolean isCacheable(LeafReaderContext ctx) {
+      return inner.isCacheable(ctx) && valueSource.isCacheable(ctx);
+    }
+
   }
 }

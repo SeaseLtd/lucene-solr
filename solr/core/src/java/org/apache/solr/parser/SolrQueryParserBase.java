@@ -43,6 +43,7 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.RegexpQuery;
 import org.apache.lucene.search.WildcardQuery;
 import org.apache.lucene.util.QueryBuilder;
+import org.apache.lucene.util.Version;
 import org.apache.lucene.util.automaton.Automata;
 import org.apache.lucene.util.automaton.Automaton;
 import org.apache.lucene.util.automaton.Operations;
@@ -56,6 +57,7 @@ import org.apache.solr.schema.IndexSchema;
 import org.apache.solr.schema.SchemaField;
 import org.apache.solr.schema.TextField;
 import org.apache.solr.search.QParser;
+import org.apache.solr.search.QueryUtils;
 import org.apache.solr.search.SolrConstantScoreQuery;
 import org.apache.solr.search.SyntaxError;
 
@@ -95,6 +97,7 @@ public abstract class SolrQueryParserBase extends QueryBuilder {
   int fuzzyPrefixLength = FuzzyQuery.defaultPrefixLength;
 
   boolean autoGeneratePhraseQueries = false;
+  boolean allowSubQueryParsing = false;
   int flags;
 
   protected IndexSchema schema;
@@ -188,6 +191,10 @@ public abstract class SolrQueryParserBase extends QueryBuilder {
     this.flags = parser.getFlags();
     this.defaultField = defaultField;
     setAnalyzer(schema.getQueryAnalyzer());
+    // TODO in 8.0(?) remove this.  Prior to 7.2 we defaulted to allowing sub-query parsing by default
+    if (!parser.getReq().getCore().getSolrConfig().luceneMatchVersion.onOrAfter(Version.LUCENE_7_2_0)) {
+      setAllowSubQueryParsing(true);
+    } // otherwise defaults to false
   }
 
   // Turn on the "filter" bit and return the previous flags for the caller to save
@@ -306,6 +313,22 @@ public abstract class SolrQueryParserBase extends QueryBuilder {
     return phraseSlop;
   }
 
+  /** @see #setAllowLeadingWildcard(boolean) */
+  public boolean isAllowSubQueryParsing() {
+    return allowSubQueryParsing;
+  }
+
+  /**
+   * Set to enable subqueries to be parsed. If now allowed, the default, a {@link SyntaxError}
+   * will likely be thrown.
+   * Here is the preferred syntax using local-params:
+   *   <code>{!prefix f=field v=foo}</code>
+   * and here is the older one, using a magic field name:
+   *   <code>_query_:"{!prefix f=field v=foo}"</code>.
+   */
+  public void setAllowSubQueryParsing(boolean allowSubQueryParsing) {
+    this.allowSubQueryParsing = allowSubQueryParsing;
+  }
 
   /**
    * Set to <code>true</code> to allow leading wildcard characters.
@@ -657,7 +680,7 @@ public abstract class SolrQueryParserBase extends QueryBuilder {
       }
     }
 
-    BooleanQuery bq = booleanBuilder.build();
+    BooleanQuery bq = QueryUtils.build(booleanBuilder,parser);
     if (bq.clauses().size() == 1) { // Unwrap single SHOULD query
       BooleanClause clause = bq.clauses().iterator().next();
       if (clause.getOccur() == BooleanClause.Occur.SHOULD) {
@@ -910,7 +933,7 @@ public abstract class SolrQueryParserBase extends QueryBuilder {
             Query subq = ft.getFieldQuery(this.parser, rawq.sfield, externalVal);
             booleanBuilder.add(subq, BooleanClause.Occur.SHOULD);
           }
-          normal = booleanBuilder.build();
+          normal = QueryUtils.build(booleanBuilder, parser);
         }
       }
     }
@@ -938,7 +961,7 @@ public abstract class SolrQueryParserBase extends QueryBuilder {
     } else {
       // intercept magic field name of "_" to use as a hook for our
       // own functions.
-      if (field.charAt(0) == '_' && parser != null) {
+      if (allowSubQueryParsing && field.charAt(0) == '_' && parser != null) {
         MagicFieldName magic = MagicFieldName.get(field);
         if (null != magic) {
           subQParser = parser.subQuery(queryText, magic.subParser);
@@ -982,7 +1005,7 @@ public abstract class SolrQueryParserBase extends QueryBuilder {
     } else {
       // intercept magic field name of "_" to use as a hook for our
       // own functions.
-      if (field.charAt(0) == '_' && parser != null) {
+      if (allowSubQueryParsing && field.charAt(0) == '_' && parser != null) {
         MagicFieldName magic = MagicFieldName.get(field);
         if (null != magic) {
           subQParser = parser.subQuery(String.join(" ", queryTerms), magic.subParser);
@@ -1131,6 +1154,9 @@ public abstract class SolrQueryParserBase extends QueryBuilder {
 
   // called from parser
   protected Query getLocalParams(String qfield, String lparams) throws SyntaxError {
+    if (!allowSubQueryParsing) {
+      throw new SyntaxError("local-params subquery is disabled");
+    }
     QParser nested = parser.subQuery(lparams, null);
     return nested.getQuery();
   }

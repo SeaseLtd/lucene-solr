@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import junit.framework.AssertionFailedError;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.QueryUtils;
 import org.apache.solr.SolrTestCaseJ4;
@@ -93,13 +94,6 @@ public class QueryEqualityTest extends SolrTestCaseJ4 {
                       " +apache +solr");
   }
 
-  public void testQueryLucenePlusSort() throws Exception {
-    assertQueryEquals("lucenePlusSort", 
-                      "apache solr", "apache  solr", "apache solr ; score desc");
-    assertQueryEquals("lucenePlusSort", 
-                      "+apache +solr", "apache AND solr", " +apache +solr; score desc");
-  }
-
   public void testQueryPrefix() throws Exception {
     SolrQueryRequest req = req("myField","foo_s");
     try {
@@ -169,7 +163,7 @@ public class QueryEqualityTest extends SolrTestCaseJ4 {
   public void testGraphTermsQuery() throws Exception {
     SolrQueryRequest req = req("q", "*:*");
     try {
-      assertQueryEquals("graphTerms", req, "{!graphTerms f=field1 maxDocFreq=1000}term1,term2");
+      assertQueryEquals("graphTerms", req, "{!graphTerms f=field1_s maxDocFreq=1000}term1,term2");
     } finally {
       req.close();
     }
@@ -376,8 +370,10 @@ public class QueryEqualityTest extends SolrTestCaseJ4 {
                                "myField","foo_i",
                                "myInner","product(4,foo_i)");
     try {
+      // NOTE: unlike most queries, frange defaultsto cost==100
       assertQueryEquals("frange", req, 
                         "{!frange l=0.2 h=20.4}sum(4,5)",
+                        "{!frange l=0.2 h=20.4 cost=100}sum(4,5)",
                         "{!frange l=$low h=$high}sum(4,$myVar)");
     } finally {
       req.close();
@@ -860,6 +856,21 @@ public class QueryEqualityTest extends SolrTestCaseJ4 {
     }
   }
 
+  public void testFuncConcat() throws Exception {
+    SolrQueryRequest req = req("myField","bar_f","myOtherField","bar_t");
+
+    try {
+      assertFuncEquals(req,
+          "concat(bar_f,bar_t)",
+          "concat($myField,bar_t)",
+          "concat(bar_f,$myOtherField)",
+          "concat($myField,$myOtherField)");
+
+    } finally {
+      req.close();
+    }
+  }
+
   public void testFuncSingleValueMathFuncs() throws Exception {
     SolrQueryRequest req = req("myVal","45", "myField","foo_i");
     for (final String func : new String[] {"abs","rad","deg","sqrt","cbrt",
@@ -1010,7 +1021,7 @@ public class QueryEqualityTest extends SolrTestCaseJ4 {
    */
   protected void assertQueryEquals(final String defType,
                                    final String... inputs) throws Exception {
-    SolrQueryRequest req = req();
+    SolrQueryRequest req = req(new String[] {"df", "text"});
     try {
       assertQueryEquals(defType, req, inputs);
     } finally {
@@ -1038,7 +1049,7 @@ public class QueryEqualityTest extends SolrTestCaseJ4 {
       SolrQueryResponse rsp = new SolrQueryResponse();
       SolrRequestInfo.setRequestInfo(new SolrRequestInfo(req,rsp));
       for (int i = 0; i < inputs.length; i++) {
-        queries[i] = (QParser.getParser(inputs[i], defType, req).getQuery());
+        queries[i] = QParser.getParser(inputs[i], defType, true, req).getQuery();
       }
     } finally {
       SolrRequestInfo.clearRequestInfo();
@@ -1122,4 +1133,80 @@ public class QueryEqualityTest extends SolrTestCaseJ4 {
     assertFalse(equals);
   }
 
+  public void testChildField() throws Exception {
+    final SolrQueryRequest req = req("q", "{!parent which=type_s1:parent}whatever_s1:foo");
+    try {
+      assertFuncEquals(req,
+          "childfield(name_s1,$q)", "childfield(name_s1,$q)");
+    } finally {
+      req.close();
+    }
+  }
+
+  public void testPayloadScoreQuery() throws Exception {
+    // I don't see a precedent to test query inequality in here, so doing a `try`
+    // There was a bug with PayloadScoreQuery's .equals() method that said two queries were equal with different includeSpanScore settings
+
+    try {
+      assertQueryEquals
+          ("payload_score"
+              , "{!payload_score f=foo_dpf v=query func=min includeSpanScore=false}"
+              , "{!payload_score f=foo_dpf v=query func=min includeSpanScore=true}"
+          );
+      fail("queries should not have been equal");
+    } catch(AssertionFailedError e) {
+      assertTrue("queries were not equal, as expected", true);
+    }
+  }
+
+  public void testPayloadCheckQuery() throws Exception {
+    try {
+      assertQueryEquals
+          ("payload_check"
+              , "{!payload_check f=foo_dpf payloads=2}one"
+              , "{!payload_check f=foo_dpf payloads=2}two"
+          );
+      fail("queries should not have been equal");
+    } catch(AssertionFailedError e) {
+      assertTrue("queries were not equal, as expected", true);
+    }
+  }
+
+  public void testPayloadFunction() throws Exception {
+    SolrQueryRequest req = req("myField","bar_f");
+
+    try {
+      assertFuncEquals(req,
+          "payload(foo_dpf,some_term)",
+          "payload(foo_dpf,some_term)");
+    } finally {
+      req.close();
+    }
+  }
+
+  public void testBoolQuery() throws Exception {
+      assertQueryEquals("bool",
+          "{!bool must='{!lucene}foo_s:a' must='{!lucene}foo_s:b'}",
+          "{!bool must='{!lucene}foo_s:b' must='{!lucene}foo_s:a'}");
+    assertQueryEquals("bool",
+        "{!bool must_not='{!lucene}foo_s:a' should='{!lucene}foo_s:b' " +
+            "must='{!lucene}foo_s:c' filter='{!lucene}foo_s:d' filter='{!lucene}foo_s:e'}",
+        "{!bool must='{!lucene}foo_s:c' filter='{!lucene}foo_s:d' " +
+            "must_not='{!lucene}foo_s:a' should='{!lucene}foo_s:b' filter='{!lucene}foo_s:e'}");
+    try {
+      assertQueryEquals
+          ("bool"
+              , "{!bool must='{!lucene}foo_s:a'}"
+              , "{!bool should='{!lucene}foo_s:a'}"
+          );
+      fail("queries should not have been equal");
+    } catch(AssertionFailedError e) {
+      assertTrue("queries were not equal, as expected", true);
+    }
+  }
+
+  // Override req to add df param
+  public static SolrQueryRequest req(String... q) {
+    return SolrTestCaseJ4.req(q, "df", "text");
+  }
 }

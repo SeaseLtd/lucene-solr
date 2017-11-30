@@ -25,20 +25,9 @@ import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Metric;
 import org.apache.commons.io.FileUtils;
 import org.apache.solr.SolrJettyTestBase;
-import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.SolrRequest;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
-import org.apache.solr.client.solrj.request.GenericSolrRequest;
-import org.apache.solr.client.solrj.response.QueryResponse;
-import org.apache.solr.common.params.CommonParams;
-import org.apache.solr.common.util.NamedList;
 import org.apache.solr.core.NodeConfig;
 import org.apache.solr.core.SolrResourceLoader;
 import org.apache.solr.core.SolrXmlConfig;
-import org.apache.solr.handler.admin.MetricsHandler;
-import org.apache.solr.request.SolrQueryRequest;
-import org.apache.solr.response.SolrQueryResponse;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -135,14 +124,14 @@ public class JvmMetricsTest extends SolrJettyTestBase {
     String solrXml = FileUtils.readFileToString(Paths.get(home.toString(), "solr.xml").toFile(), "UTF-8");
     NodeConfig config = SolrXmlConfig.fromString(loader, solrXml);
     NodeConfig.NodeConfigBuilder.DEFAULT_HIDDEN_SYS_PROPS.forEach(s -> {
-      assertTrue(s, config.getHiddenSysProps().contains(s));
+      assertTrue(s, config.getMetricsConfig().getHiddenSysProps().contains(s));
     });
 
     // custom config
     solrXml = FileUtils.readFileToString(Paths.get(home.toString(), "solr-hiddensysprops.xml").toFile(), "UTF-8");
     NodeConfig config2 = SolrXmlConfig.fromString(loader, solrXml);
     Arrays.asList("foo", "bar", "baz").forEach(s -> {
-      assertTrue(s, config2.getHiddenSysProps().contains(s));
+      assertTrue(s, config2.getMetricsConfig().getHiddenSysProps().contains(s));
     });
   }
 

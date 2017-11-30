@@ -16,14 +16,6 @@
  */
 package org.apache.solr.search.facet;
 
-import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.queries.function.FunctionValues;
-import org.apache.lucene.queries.function.ValueSource;
-import org.apache.solr.common.util.SimpleOrderedMap;
-import org.apache.solr.search.DocIterator;
-import org.apache.solr.search.DocSet;
-import org.apache.solr.search.SolrIndexSearcher;
-
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.Array;
@@ -31,6 +23,16 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.queries.function.FunctionValues;
+import org.apache.lucene.queries.function.ValueSource;
+import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.util.FixedBitSet;
+import org.apache.solr.common.util.SimpleOrderedMap;
+import org.apache.solr.search.DocIterator;
+import org.apache.solr.search.DocSet;
+import org.apache.solr.search.SolrIndexSearcher;
 
 /**
  * Accumulates statistics separated by a slot number. 
@@ -94,7 +96,7 @@ public abstract class SlotAcc implements Closeable {
     }
   }
 
-  public abstract void reset();
+  public abstract void reset() throws IOException;
 
   public abstract void resize(Resizer resizer);
 
@@ -137,6 +139,38 @@ public abstract class SlotAcc implements Closeable {
           }
         }
       }
+      return values;
+    }
+
+    public long[] resize(long[] old, long defaultValue) {
+      long[] values = new long[getNewSize()];
+      if (defaultValue != 0) {
+        Arrays.fill(values, 0, values.length, defaultValue);
+      }
+      for (int i = 0; i < old.length; i++) {
+        long val = old[i];
+        if (val != defaultValue) {
+          int newSlot = getNewSlot(i);
+          if (newSlot >= 0) {
+            values[newSlot] = val;
+          }
+        }
+      }
+      return values;
+    }
+
+    public FixedBitSet resize(FixedBitSet old) {
+      FixedBitSet values = new FixedBitSet(getNewSize());
+      int oldSize = old.length();
+
+      for(int oldSlot = 0;;) {
+        oldSlot = values.nextSetBit(oldSlot);
+        if (oldSlot == DocIdSetIterator.NO_MORE_DOCS) break;
+        int newSlot = getNewSlot(oldSlot);
+        values.set(newSlot);
+        if (++oldSlot >= oldSize) break;
+      }
+
       return values;
     }
 
@@ -222,6 +256,40 @@ abstract class DoubleFuncSlotAcc extends FuncSlotAcc {
   }
 }
 
+abstract class LongFuncSlotAcc extends FuncSlotAcc {
+  long[] result;
+  long initialValue;
+
+  public LongFuncSlotAcc(ValueSource values, FacetContext fcontext, int numSlots, long initialValue) {
+    super(values, fcontext, numSlots);
+    this.initialValue = initialValue;
+    result = new long[numSlots];
+    if (initialValue != 0) {
+      reset();
+    }
+  }
+
+  @Override
+  public int compare(int slotA, int slotB) {
+    return Long.compare(result[slotA], result[slotB]);
+  }
+
+  @Override
+  public Object getValue(int slot) {
+    return result[slot];
+  }
+
+  @Override
+  public void reset() {
+    Arrays.fill(result, initialValue);
+  }
+
+  @Override
+  public void resize(Resizer resizer) {
+    result = resizer.resize(result, initialValue);
+  }
+}
+
 abstract class IntSlotAcc extends SlotAcc {
   int[] result; // use LongArray32
   int initialValue;
@@ -280,40 +348,6 @@ class SumsqSlotAcc extends DoubleFuncSlotAcc {
   }
 }
 
-class MinSlotAcc extends DoubleFuncSlotAcc {
-  public MinSlotAcc(ValueSource values, FacetContext fcontext, int numSlots) {
-    super(values, fcontext, numSlots, Double.NaN);
-  }
-
-  @Override
-  public void collect(int doc, int slotNum) throws IOException {
-    double val = values.doubleVal(doc);
-    if (val == 0 && !values.exists(doc)) return; // depend on fact that non existing values return 0 for func query
-
-    double currMin = result[slotNum];
-    if (!(val >= currMin)) { // val>=currMin will be false for staring value: val>=NaN
-      result[slotNum] = val;
-    }
-  }
-}
-
-class MaxSlotAcc extends DoubleFuncSlotAcc {
-  public MaxSlotAcc(ValueSource values, FacetContext fcontext, int numSlots) {
-    super(values, fcontext, numSlots, Double.NaN);
-  }
-
-  @Override
-  public void collect(int doc, int slotNum) throws IOException {
-    double val = values.doubleVal(doc);
-    if (val == 0 && !values.exists(doc)) return; // depend on fact that non existing values return 0 for func query
-
-    double currMax = result[slotNum];
-    if (!(val <= currMax)) { // reversed order to handle NaN
-      result[slotNum] = val;
-    }
-  }
-
-}
 
 class AvgSlotAcc extends DoubleFuncSlotAcc {
   int[] counts;
@@ -551,7 +585,7 @@ class CountSlotArrAcc extends CountSlotAcc {
 
   @Override
   public void resize(Resizer resizer) {
-    resizer.resize(result, 0);
+    result = resizer.resize(result, 0);
   }
 }
 

@@ -33,7 +33,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexFileNames;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.SegmentInfos;
@@ -287,15 +286,6 @@ public abstract class ReplicaNode extends Node {
       // Finally, we are open for business, since our index now "agrees" with the primary:
       mgr = new SegmentInfosSearcherManager(dir, this, infos, searcherFactory);
 
-      IndexSearcher searcher = mgr.acquire();
-      try {
-        // TODO: this is test specific:
-        int hitCount = searcher.count(new TermQuery(new Term("marker", "marker")));
-        message("top: marker count=" + hitCount + " version=" + ((DirectoryReader) searcher.getIndexReader()).getVersion());
-      } finally {
-        mgr.release(searcher);
-      }
-
       // Must commit after init mgr:
       if (doCommit) {
         // Very important to commit what we just sync'd over, because we removed the pre-existing commit point above if we had to
@@ -312,7 +302,7 @@ public abstract class ReplicaNode extends Node {
       } else {
         dir.close();
       }
-      IOUtils.reThrow(t);
+      throw IOUtils.rethrowAlways(t);
     }
   }
   
@@ -362,7 +352,7 @@ public abstract class ReplicaNode extends Node {
     }
   }
 
-  void finishNRTCopy(CopyJob job, long startNS) throws IOException {
+  protected void finishNRTCopy(CopyJob job, long startNS) throws IOException {
     CopyState copyState = job.getCopyState();
     message("top: finishNRTCopy: version=" + copyState.version + (job.getFailed() ? " FAILED" : "") + " job=" + job);
 
@@ -497,7 +487,7 @@ public abstract class ReplicaNode extends Node {
 
     if (version < curVersion) {
       // This can happen, if two syncs happen close together, and due to thread scheduling, the incoming older version runs after the newer version
-      message("top: new NRT point (version=" + version + ") is older than current (version=" + version + "); skipping");
+      message("top: new NRT point (version=" + version + ") is older than current (version=" + curVersion + "); skipping");
       return null;
     }
 

@@ -59,6 +59,7 @@ import static org.apache.solr.common.params.CommonParams.NAME;
 public class SolrXmlConfig {
 
   public final static String SOLR_XML_FILE = "solr.xml";
+  public final static String SOLR_DATA_HOME = "solr.data.home";
 
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -103,8 +104,7 @@ public class SolrXmlConfig {
     if (cloudConfig != null)
       configBuilder.setCloudConfig(cloudConfig);
     configBuilder.setBackupRepositoryPlugins(getBackupRepositoryPluginInfos(config));
-    configBuilder.setMetricReporterPlugins(getMetricReporterPluginInfos(config));
-    configBuilder.setHiddenSysProps(getHiddenSysProps(config));
+    configBuilder.setMetricsConfig(getMetricsConfig(config));
     return fillSolrSection(configBuilder, entries);
   }
 
@@ -176,7 +176,7 @@ public class SolrXmlConfig {
 
     if (config.getVal(xPath, false) != null) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, "Should not have found " + xPath +
-          "\n. Please upgrade your solr.xml: https://cwiki.apache.org/confluence/display/solr/Format+of+solr.xml");
+          "\n. Please upgrade your solr.xml: https://lucene.apache.org/solr/guide/format-of-solr-xml.html");
     }
   }
 
@@ -241,6 +241,9 @@ public class SolrXmlConfig {
         case "collectionsHandler":
           builder.setCollectionsAdminHandlerClass(value);
           break;
+        case "healthCheckHandler":
+          builder.setHealthCheckHandlerClass(value);
+          break;
         case "infoHandler":
           builder.setInfoHandlerClass(value);
           break;
@@ -249,6 +252,9 @@ public class SolrXmlConfig {
           break;
         case "coreRootDirectory":
           builder.setCoreRootDirectory(value);
+          break;
+        case "solrDataHome":
+          builder.setSolrDataHome(value);
           break;
         case "managementPath":
           builder.setManagementPath(value);
@@ -373,14 +379,12 @@ public class SolrXmlConfig {
         case "zkClientTimeout":
           builder.setZkClientTimeout(parseInt(name, value));
           break;
-        case "autoReplicaFailoverBadNodeExpiration":
-          builder.setAutoReplicaFailoverBadNodeExpiration(parseInt(name, value));
+        case "autoReplicaFailoverBadNodeExpiration": case "autoReplicaFailoverWorkLoopDelay":
+          //TODO remove this in Solr 8.0
+          log.info("Configuration parameter " + name + " is ignored");
           break;
         case "autoReplicaFailoverWaitAfterExpiration":
           builder.setAutoReplicaFailoverWaitAfterExpiration(parseInt(name, value));
-          break;
-        case "autoReplicaFailoverWorkLoopDelay":
-          builder.setAutoReplicaFailoverWorkLoopDelay(parseInt(name, value));
           break;
         case "zkHost":
           builder.setZkHost(value);
@@ -461,6 +465,32 @@ public class SolrXmlConfig {
     return configs;
   }
 
+  private static MetricsConfig getMetricsConfig(Config config) {
+    MetricsConfig.MetricsConfigBuilder builder = new MetricsConfig.MetricsConfigBuilder();
+    Node node = config.getNode("solr/metrics/suppliers/counter", false);
+    if (node != null) {
+      builder = builder.setCounterSupplier(new PluginInfo(node, "counterSupplier", false, false));
+    }
+    node = config.getNode("solr/metrics/suppliers/meter", false);
+    if (node != null) {
+      builder = builder.setMeterSupplier(new PluginInfo(node, "meterSupplier", false, false));
+    }
+    node = config.getNode("solr/metrics/suppliers/timer", false);
+    if (node != null) {
+      builder = builder.setTimerSupplier(new PluginInfo(node, "timerSupplier", false, false));
+    }
+    node = config.getNode("solr/metrics/suppliers/histogram", false);
+    if (node != null) {
+      builder = builder.setHistogramSupplier(new PluginInfo(node, "histogramSupplier", false, false));
+    }
+    PluginInfo[] reporterPlugins = getMetricReporterPluginInfos(config);
+    Set<String> hiddenSysProps = getHiddenSysProps(config);
+    return builder
+        .setMetricReporterPlugins(reporterPlugins)
+        .setHiddenSysProps(hiddenSysProps)
+        .build();
+  }
+
   private static PluginInfo[] getMetricReporterPluginInfos(Config config) {
     NodeList nodes = (NodeList) config.evaluate("solr/metrics/reporter", XPathConstants.NODESET);
     List<PluginInfo> configs = new ArrayList<>();
@@ -513,4 +543,3 @@ public class SolrXmlConfig {
     return (node == null) ? null : new PluginInfo(node, "transientCoreCacheFactory", false, true);
   }
 }
-

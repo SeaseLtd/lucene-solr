@@ -109,7 +109,7 @@ public class TestConfigReload extends AbstractFullDistribZkTestBase {
     assertTrue(newStat.getVersion() > stat.getVersion());
     log.info("new_version "+ newStat.getVersion());
     Integer newVersion = newStat.getVersion();
-    long maxTimeoutSeconds = 20;
+    long maxTimeoutSeconds = 60;
     DocCollection coll = cloudClient.getZkStateReader().getClusterState().getCollection("collection1");
     List<String> urls = new ArrayList<>();
     for (Slice slice : coll.getSlices()) {
@@ -121,7 +121,7 @@ public class TestConfigReload extends AbstractFullDistribZkTestBase {
     while ( TimeUnit.SECONDS.convert(System.nanoTime() - startTime, TimeUnit.NANOSECONDS) < maxTimeoutSeconds){
       Thread.sleep(50);
       for (String url : urls) {
-        Map respMap = getAsMap(url+uri+"?wt=json");
+        Map respMap = getAsMap(url+uri);
         if(String.valueOf(newVersion).equals(String.valueOf( getObjectByPath(respMap, true, asList(name, "znodeVersion"))))){
           succeeded.add(url);
         }
