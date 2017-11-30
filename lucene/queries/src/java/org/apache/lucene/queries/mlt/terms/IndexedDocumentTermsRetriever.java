@@ -19,15 +19,11 @@ package org.apache.lucene.queries.mlt.terms;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.Fields;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.index.MultiDocValues;
-import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.queries.mlt.MoreLikeThisParameters;
@@ -41,16 +37,16 @@ import org.apache.lucene.util.PriorityQueue;
  * Each term will have a score assigned, indicating how much important is in the field.
  *
  * This class is currently used in :
- * - MoreLikeThis Request Handler
- * - Simple More Like This query parser
+ * - MoreLikeThis Request Handler [Apache Solr]
+ * - Simple More Like This query parser [Apache Solr]
  */
-public class LocalDocumentTermsRetriever extends InterestingTermsRetriever{
+public class IndexedDocumentTermsRetriever extends InterestingTermsRetriever{
 
-  public LocalDocumentTermsRetriever(IndexReader ir) {
+  public IndexedDocumentTermsRetriever(IndexReader ir) {
     this.ir = ir;
   }
 
-  public LocalDocumentTermsRetriever(IndexReader ir, MoreLikeThisParameters params) {
+  public IndexedDocumentTermsRetriever(IndexReader ir, MoreLikeThisParameters params) {
     this.ir = ir;
     this.parameters =params;
   }
@@ -60,12 +56,9 @@ public class LocalDocumentTermsRetriever extends InterestingTermsRetriever{
    *
    * @param docNum the id of the lucene document from which to find terms
    */
-  public PriorityQueue<ScoredTerm> retrieveTermsFromLocalDocument(int docNum) throws IOException {
+  public PriorityQueue<ScoredTerm> retrieveTermsFromIndexedDocument(int docNum) throws IOException {
     DocumentTermFrequencies perFieldTermFrequencies =new DocumentTermFrequencies();
-    Map<String, NumericDocValues> fieldToNorms = new HashMap<>();
-
     for (String fieldName : parameters.getFieldNames()) {
-      fieldToNorms.put(fieldName,MultiDocValues.getNormValues(ir,fieldName));
       final Fields vectors = ir.getTermVectors(docNum);
       final Terms vector;
 
@@ -76,8 +69,8 @@ public class LocalDocumentTermsRetriever extends InterestingTermsRetriever{
       }
       // field does not store term vector info
       if (vector == null) {
-        Document localDocument = ir.document(docNum);
-        IndexableField[] fields = localDocument.getFields(fieldName);
+        Document indexedDocument = ir.document(docNum);
+        IndexableField[] fields = indexedDocument.getFields(fieldName);
         for (IndexableField field : fields) {
           updateTermFrequenciesCount(field,perFieldTermFrequencies);
         }
@@ -85,8 +78,6 @@ public class LocalDocumentTermsRetriever extends InterestingTermsRetriever{
         updateTermFrequenciesCount(perFieldTermFrequencies, vector, fieldName);
       }
     }
-    super.interestingTermsScorer.setField2normsFromIndex(fieldToNorms);
-    super.interestingTermsScorer.setDocId(docNum);
 
     return retrieveInterestingTerms(perFieldTermFrequencies);
   }
@@ -116,7 +107,7 @@ public class LocalDocumentTermsRetriever extends InterestingTermsRetriever{
     final int maxQueryTerms = parameters.getMaxQueryTerms();
 
     ArrayList<Object> al = new ArrayList<>(maxQueryTerms);
-    PriorityQueue<ScoredTerm> pq = retrieveTermsFromLocalDocument(docNum);
+    PriorityQueue<ScoredTerm> pq = retrieveTermsFromIndexedDocument(docNum);
     ScoredTerm scoredTerm;
     int lim = maxQueryTerms; // have to be careful, retrieveTerms returns all words but that's probably not useful to our caller...
     // we just want to return the top words

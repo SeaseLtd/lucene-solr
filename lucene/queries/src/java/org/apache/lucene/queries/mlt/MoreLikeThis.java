@@ -26,7 +26,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.MultiFields;
 import org.apache.lucene.queries.mlt.query.MoreLikeThisQueryBuilder;
 import org.apache.lucene.queries.mlt.terms.LuceneDocumentTermsRetriever;
-import org.apache.lucene.queries.mlt.terms.LocalDocumentTermsRetriever;
+import org.apache.lucene.queries.mlt.terms.IndexedDocumentTermsRetriever;
 import org.apache.lucene.queries.mlt.terms.scorer.ScoredTerm;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.util.PriorityQueue;
@@ -104,7 +104,7 @@ public final class MoreLikeThis {
    */
   private MoreLikeThisParameters params;
 
-  private LocalDocumentTermsRetriever localDocumentTermsRetriever;
+  private IndexedDocumentTermsRetriever indexedDocumentTermsRetriever;
 
   private LuceneDocumentTermsRetriever luceneDocumentTermsRetriever;
 
@@ -129,7 +129,7 @@ public final class MoreLikeThis {
     this.params = params;
     this.ir = ir;
 
-    this.localDocumentTermsRetriever = new LocalDocumentTermsRetriever(ir, params);
+    this.indexedDocumentTermsRetriever = new IndexedDocumentTermsRetriever(ir, params);
     this.luceneDocumentTermsRetriever = new LuceneDocumentTermsRetriever(ir, params);
 
     this.queryBuilder = new MoreLikeThisQueryBuilder(params);
@@ -142,7 +142,7 @@ public final class MoreLikeThis {
   public void setParameters(MoreLikeThisParameters params) {
     this.params = params;
 
-    this.localDocumentTermsRetriever.setParameters(params);
+    this.indexedDocumentTermsRetriever.setParameters(params);
     this.luceneDocumentTermsRetriever.setParameters(params);
 
     this.queryBuilder.setParameters(params);
@@ -160,20 +160,20 @@ public final class MoreLikeThis {
    */
   public Query like(int docNum) throws IOException {
     String[] fieldNames = params.getFieldNames();
-    initMoreLikeThisQueryFields(fieldNames);
-    PriorityQueue<ScoredTerm> scoredTerms = localDocumentTermsRetriever.retrieveTermsFromLocalDocument(docNum);
+    initMoreLikeThisQueryFieldsIfEmpty(fieldNames);
+    PriorityQueue<ScoredTerm> scoredTerms = indexedDocumentTermsRetriever.retrieveTermsFromIndexedDocument(docNum);
 
     return queryBuilder.createQuery(scoredTerms);
   }
 
   public Query like(Document luceneDocument) throws IOException {
-    initMoreLikeThisQueryFields(params.getFieldNames());
+    initMoreLikeThisQueryFieldsIfEmpty(params.getFieldNames());
     PriorityQueue<ScoredTerm> scoredTerms = luceneDocumentTermsRetriever.retrieveTermsFromDocument(luceneDocument);
     return queryBuilder.createQuery(scoredTerms);
   }
 
   public Query like(String fieldName, String... seedText) throws IOException {
-    initMoreLikeThisQueryFields(params.getFieldNames());
+    initMoreLikeThisQueryFieldsIfEmpty(params.getFieldNames());
 
     Document luceneDocument = new Document();
     for (String seedTextValue : seedText) {
@@ -183,7 +183,7 @@ public final class MoreLikeThis {
     return this.like(luceneDocument);
   }
 
-  private void initMoreLikeThisQueryFields(String[] fieldNames) {
+  private void initMoreLikeThisQueryFieldsIfEmpty(String[] fieldNames) {
     if (fieldNames == null) {
       // gather list of valid fields from lucene
       Collection<String> fields = MultiFields.getIndexedFields(ir);

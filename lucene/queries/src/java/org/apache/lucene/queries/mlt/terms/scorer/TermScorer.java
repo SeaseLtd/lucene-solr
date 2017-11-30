@@ -26,22 +26,14 @@ import org.apache.lucene.search.TermStatistics;
 import org.apache.lucene.search.similarities.Similarity;
 
 /**
-* This class has the responsibility of calculating a score for a term.
- * The score will measure how much interesting the term is in the field given :
- * - term stats local to the field content
+ * This class has the responsibility of calculating the score for a term in the source text.
+ * The score will measure how much interesting the term for the given source field text:
+ * - term stats local to the source field text
  * - field stats global to the index
  */
 public interface TermScorer {
-  float score(String fieldName, CollectionStatistics fieldStats, TermStatistics termStats, float termFrequency) throws IOException;
+  float score(String fieldName, CollectionStatistics globalFieldStats, TermStatistics globalTermStats, float localTermFrequency) throws IOException;
 
-  Similarity.SimWeight getSimilarityStats(String fieldName, CollectionStatistics fieldStats, TermStatistics termStats, float termFrequency) throws IOException;
-
-  void setField2normsFromIndex(Map<String, NumericDocValues> field2normsFromIndex);
-
-  void setField2norm(Map<String, Float> field2norm);
-
-  void setDocId(int docId);
-
-  void setTextNorm(float textNorm);
+  Similarity.SimWeight getSimilarityStats(String fieldName, CollectionStatistics globalFieldStats, TermStatistics globalTermStats, float localTermFrequency) throws IOException;
 
   }

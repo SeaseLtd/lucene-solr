@@ -30,6 +30,7 @@ import org.apache.lucene.util.PriorityQueue;
 
 /**
  * This class has the responsiblity of extracting interesting terms from a lucene document in input.
+ * N.B. this document is not necessarily indexed in the current Lucene Index
  * Each term will have a score assigned, indicating how much important is in the field.
  *
  * This class is currently used in :
@@ -49,16 +50,11 @@ public class LuceneDocumentTermsRetriever extends InterestingTermsRetriever{
   public PriorityQueue<ScoredTerm> retrieveTermsFromDocument(Document luceneDocument) throws
       IOException {
     DocumentTermFrequencies perFieldTermFrequencies = new DocumentTermFrequencies();
-    Map<String, Float> fieldToNorm = new HashMap<>();
     for (String fieldName : parameters.getFieldNames()) {
       for (IndexableField field : luceneDocument.getFields(fieldName)) {
         updateTermFrequenciesCount(field, perFieldTermFrequencies);
-        float indexTimeBoost=1.0f; // at the moment we will stand with this simplification
-        float norm = getNorm(perFieldTermFrequencies, fieldName,indexTimeBoost);
-        fieldToNorm.put(fieldName,norm);
       }
     }
-    super.interestingTermsScorer.setField2norm(fieldToNorm);
 
     return retrieveInterestingTerms(perFieldTermFrequencies);
   }

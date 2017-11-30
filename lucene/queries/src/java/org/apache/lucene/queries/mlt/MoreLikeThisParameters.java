@@ -185,6 +185,17 @@ public final class MoreLikeThisParameters {
      return fieldToQueryTimeBoostFactor;
    }
 
+  public float getPerFieldQueryTimeBoost(String fieldName) {
+    float queryTimeBoost = queryTimeBoostFactor;
+    if(fieldToQueryTimeBoostFactor !=null){
+      Float currentFieldQueryTimeBoost = fieldToQueryTimeBoostFactor.get(fieldName);
+      if(currentFieldQueryTimeBoost!=null){
+        queryTimeBoost = currentFieldQueryTimeBoost;
+      }
+    }
+    return queryTimeBoost;
+  }
+
    public void setFieldToQueryTimeBoostFactor(Map<String, Float> fieldToQueryTimeBoostFactor) {
      this.fieldToQueryTimeBoostFactor = fieldToQueryTimeBoostFactor;
    }

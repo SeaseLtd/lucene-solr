@@ -21,9 +21,6 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queries.mlt.MoreLikeThisParameters;
 import org.apache.lucene.queries.mlt.MoreLikeThisTestBase;
@@ -34,7 +31,7 @@ import org.junit.Test;
 import static org.hamcrest.CoreMatchers.is;
 
 public abstract class InterestingTermsRetrieverTestBase extends MoreLikeThisTestBase {
-  private LocalDocumentTermsRetriever toTest;
+  private IndexedDocumentTermsRetriever toTest;
 
   @Override
   public void setUp() throws Exception {

@@ -34,34 +34,14 @@ public class TFIDFScorer implements TermScorer {
   TFIDFSimilarity similarity = new ClassicSimilarity();
 
   @Override
-  public float score(String fieldName, CollectionStatistics fieldStats, TermStatistics termStats, float termFrequency) throws IOException {
-    float idf = similarity.idf(termStats.docFreq(), fieldStats.docCount()); //sum doc freq, for distributed
-    float score = termFrequency * idf;
+  public float score(String fieldName, CollectionStatistics globalFieldStats, TermStatistics globalTermStats, float localTermFrequency) throws IOException {
+    float idf = similarity.idf(globalTermStats.docFreq(), globalFieldStats.docCount());
+    float score = localTermFrequency * idf;
     return score;
   }
 
-  public Similarity.SimWeight getSimilarityStats(String fieldName, CollectionStatistics fieldStats, TermStatistics termStats, float termFrequency) throws IOException {
-    return similarity.computeWeight(1.0f, fieldStats, termStats);
-  }
-
-  @Override
-  public void setField2normsFromIndex(Map<String, NumericDocValues> field2normsFromIndex) {
-
-  }
-
-  @Override
-  public void setField2norm(Map<String, Float> field2norm) {
-
-  }
-
-  @Override
-  public void setDocId(int docId) {
-
-  }
-
-  @Override
-  public void setTextNorm(float textNorm) {
-
+  public Similarity.SimWeight getSimilarityStats(String fieldName, CollectionStatistics globalFieldStats, TermStatistics globalTermStats, float localTermFrequency) throws IOException {
+    return similarity.computeWeight(1.0f, globalFieldStats, globalTermStats);
   }
 
 }

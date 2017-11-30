@@ -104,7 +104,7 @@ public abstract class InterestingTermsRetriever {
     FreqQ interestingTerms = new FreqQ(queueSize); // will order words by score
     for (DocumentTermFrequencies.FieldTermFrequencies fieldTermFrequencies : perFieldTermFrequencies.getAll()) {
       String fieldName = fieldTermFrequencies.getFieldName();
-      float fieldBoost = getQueryTimeBoost(fieldName);
+      float fieldBoost = parameters.getPerFieldQueryTimeBoost(fieldName);
       CollectionStatistics fieldStats = new IndexSearcher(ir).collectionStatistics(fieldName);
       for (Map.Entry<String, DocumentTermFrequencies.Int> termFrequencyEntry : fieldTermFrequencies.getAll()) { // for every term
         String word = termFrequencyEntry.getKey();
@@ -150,18 +150,6 @@ public abstract class InterestingTermsRetriever {
     return interestingTerms;
   }
 
-  private float getQueryTimeBoost(String fieldName) {
-    float queryTimeBoost = parameters.getQueryTimeBoostFactor();
-    Map<String, Float> fieldToQueryTimeBoost = parameters.getFieldToQueryTimeBoostFactor();
-    if(fieldToQueryTimeBoost !=null){
-      Float currentFieldQueryTimeBoost = fieldToQueryTimeBoost.get(fieldName);
-      if(currentFieldQueryTimeBoost!=null){
-        queryTimeBoost = currentFieldQueryTimeBoost;
-      }
-    }
-    return queryTimeBoost;
-  }
-
   protected int getTotalTermsCount(DocumentTermFrequencies perFieldTermFrequencies) {
     int totalTermsCount = 0;
     Collection<DocumentTermFrequencies.FieldTermFrequencies> termFrequencies = perFieldTermFrequencies.getAll();
@@ -169,12 +157,6 @@ public abstract class InterestingTermsRetriever {
       totalTermsCount += singleFieldTermFrequencies.size();
     }
     return totalTermsCount;
-  }
-
-  protected float getNorm(DocumentTermFrequencies perFieldTermFrequencies, String fieldName, float fieldIndexBoost) {
-    DocumentTermFrequencies.FieldTermFrequencies term2frequencies = perFieldTermFrequencies.get(fieldName);
-    int fieldLength = term2frequencies.getAllFrequencies().stream().mapToInt(i -> i.frequency).sum();
-    return (float) SmallFloat.floatToByte315(fieldIndexBoost / (float) Math.sqrt(fieldLength));
   }
 
   /**

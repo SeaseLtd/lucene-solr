@@ -31,7 +31,7 @@ import org.apache.lucene.util.PriorityQueue;
 
 /**
  * This class has the responsibility of building the More Like This Boolean Query.
- * It takes in inpout the interesting terms and build the term queries based on the score of each.
+ * It takes in input the interesting terms queue and build the term queries based on the score of each.
  *
  * Query time boosting is supported.
  * If enabled each term will be boosted by its score.
@@ -60,7 +60,7 @@ public class MoreLikeThisQueryBuilder {
           if(fieldToQueryTimeBoostFactor!=null && fieldToQueryTimeBoostFactor.get(interestingTerm.field)!=null){
             fieldBoost = fieldToQueryTimeBoostFactor.get(interestingTerm.field);
           }
-          minScore = currentScore/fieldBoost; // boost was already applied when finding interesting terms
+          minScore = currentScore/fieldBoost; // boost was already applied when finding interesting terms so must be removed
         }
         interestingTermQuery = new BoostQuery(interestingTermQuery, currentScore / minScore);
       }
