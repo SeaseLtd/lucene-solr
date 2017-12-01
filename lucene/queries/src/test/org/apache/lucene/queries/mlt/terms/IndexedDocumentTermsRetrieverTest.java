@@ -37,7 +37,6 @@ public class IndexedDocumentTermsRetrieverTest extends InterestingTermsRetriever
     int lastDocId = initIndex();
     toTest = new IndexedDocumentTermsRetriever(reader);
     toTest.setParameters(params);
-
     return toTest.retrieveTermsFromIndexedDocument(lastDocId);
   }
 }

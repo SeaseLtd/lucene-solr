@@ -175,7 +175,7 @@ public abstract class InterestingTermsRetrieverTestBase extends MoreLikeThisTest
   }
 
   @Test
-  public void multiFieldDoc_field1Boosted_shouldConsiderMoreTermsFromField1() throws Exception {
+  public void multiFieldDoc_field2Boosted_shouldConsiderMoreTermsFromField1() throws Exception {
     //More Like This parameters definition
     int topK = 26;
     MoreLikeThisParameters params = getDefaultParams();

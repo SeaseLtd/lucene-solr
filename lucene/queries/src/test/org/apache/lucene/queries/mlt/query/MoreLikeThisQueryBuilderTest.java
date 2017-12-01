@@ -17,6 +17,9 @@
 
 package org.apache.lucene.queries.mlt.query;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.apache.lucene.queries.mlt.MoreLikeThisParameters;
 import org.apache.lucene.queries.mlt.MoreLikeThisTestBase;
 import org.apache.lucene.queries.mlt.terms.scorer.ScoredTerm;
@@ -55,6 +58,35 @@ public class MoreLikeThisQueryBuilderTest extends MoreLikeThisTestBase {
 
     Query query = builderToTest.createQuery(interestingTerms);
 
+    assertThat(query.toString(), is("(field2:term5)^1.0 (field1:term3)^3.0 (field1:term2)^4.0 (field1:term1)^5.0 (field2:term4)^7.0"));
+  }
+
+  @Test
+  public void boostOn_singleBoostAcrossFields_shouldBuildQueryPreservingTermsRelationAndBoost() throws Exception {
+    MoreLikeThisParameters params = getDefaultParams();
+    params.enableBoost(true);
+    params.setQueryTimeBoostFactor(2.0f);
+    builderToTest = new MoreLikeThisQueryBuilder(params);
+    PriorityQueue<ScoredTerm> interestingTerms = this.buildInterestingTermsQueue();
+
+    Query query = builderToTest.createQuery(interestingTerms);
+
+    assertThat(query.toString(), is("(field2:term5)^2.0 (field1:term3)^6.0 (field1:term2)^8.0 (field1:term1)^10.0 (field2:term4)^14.0"));
+  }
+
+  @Test
+  public void boostOn_differentBoostAcrossFields_shouldBuildQueryPreservingTermsRelation() throws Exception {
+    MoreLikeThisParameters params = getDefaultParams();
+    params.enableBoost(true);
+    Map<String, Float> fieldToQueryTimeBoostFactor = new HashMap<>();
+    fieldToQueryTimeBoostFactor.put("field1",2.0f);
+    fieldToQueryTimeBoostFactor.put("field2",3.0f);
+    params.setFieldToQueryTimeBoostFactor(fieldToQueryTimeBoostFactor);
+    builderToTest = new MoreLikeThisQueryBuilder(params);
+    PriorityQueue<ScoredTerm> interestingTerms = this.buildInterestingTermsQueue();
+
+    Query query = builderToTest.createQuery(interestingTerms);
+    //boost was already applied when extracting the interesting terms, to build the query it is ok to have it normalized
     assertThat(query.toString(), is("(field2:term5)^1.0 (field1:term3)^3.0 (field1:term2)^4.0 (field1:term1)^5.0 (field2:term4)^7.0"));
   }
 
