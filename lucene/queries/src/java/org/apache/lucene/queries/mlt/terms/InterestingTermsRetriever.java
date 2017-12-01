@@ -99,6 +99,67 @@ public abstract class InterestingTermsRetriever {
     analysedTextStream.end();
   }
 
+  /**
+   * Given the term frequencies per field, this method creates a PriorityQueue based on Score.
+   *
+   * @param perFieldTermFrequencies a per field map of words keyed on the term(String) with Int objects representing frequencies as the values.
+   */
+  protected PriorityQueue<ScoredTerm> retrieveInterestingTerms(DocumentTermFrequencies perFieldTermFrequencies) throws IOException {
+    final int minTermFreq = parameters.getMinTermFreq();
+    final int maxQueryTerms = parameters.getMaxQueryTerms();
+    final int minDocFreq = parameters.getMinDocFreq();
+    final int maxDocFreq = parameters.getMaxDocFreq();
+    final int queueSize = Math.min(maxQueryTerms, this.getTotalTermsCount(perFieldTermFrequencies));
+
+    FreqQ interestingTerms = new FreqQ(queueSize); // will order words by score
+    for (DocumentTermFrequencies.FieldTermFrequencies fieldTermFrequencies : perFieldTermFrequencies.getAll()) {
+      String fieldName = fieldTermFrequencies.getFieldName();
+      float fieldBoost = parameters.getPerFieldQueryTimeBoost(fieldName);
+      CollectionStatistics fieldStats = new IndexSearcher(ir).collectionStatistics(fieldName);
+      for (Map.Entry<String, DocumentTermFrequencies.Int> termFrequencyEntry : fieldTermFrequencies.getAll()) { // for every term
+        String word = termFrequencyEntry.getKey();
+        int tf = termFrequencyEntry.getValue().frequency; // term freq in the source doc
+
+        if (minTermFreq > 0 && tf < minTermFreq) {
+          continue; // filter out words that don't occur enough times in the source
+        }
+
+        final Term currentTerm = new Term(fieldName, word);
+        int docFreq = ir.docFreq(currentTerm);
+
+        if (docFreq == 0) {
+          continue; //term not present in the index for that field, it's not possible to estimate how interesting it is
+        }
+        if (minDocFreq > 0 && docFreq < minDocFreq) {
+          continue; // filter out words that don't occur in enough docs
+        }
+
+        if (docFreq > maxDocFreq) {
+          continue; // filter out words that occur in too many docs
+        }
+
+        final TermStatistics currentTermStat = new TermStatistics(currentTerm.bytes(), docFreq, ir.totalTermFreq(currentTerm));
+        float score = interestingTermsScorer.score(fieldName, fieldStats, currentTermStat, tf);
+        // Boost should affect which terms ends up to be interesting
+        score = fieldBoost * score;
+
+        Similarity.SimWeight currentSimilarityStats = interestingTermsScorer.getSimilarityStats(fieldName, fieldStats, currentTermStat, tf);
+
+        if (interestingTerms.size() < queueSize) {
+          // there is still space in the interestingTerms
+          interestingTerms.add(new ScoredTerm(word, fieldName, score, currentSimilarityStats));// there was idf, possibly we want the stats there
+        } else {
+          ScoredTerm minScoredTerm = interestingTerms.top();
+          if (minScoredTerm.score < score) { // current term deserve a space as it is more interesting than the top
+            minScoredTerm.update(word, fieldName, score, currentSimilarityStats);
+            interestingTerms.updateTop();
+          }
+        }
+      }
+    }
+    return interestingTerms;
+  }
+
   protected int getTotalTermsCount(DocumentTermFrequencies perFieldTermFrequencies) {
     int totalTermsCount = 0;
     Collection<DocumentTermFrequencies.FieldTermFrequencies> termFrequencies = perFieldTermFrequencies.getAll();
