@@ -208,7 +208,7 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
       }
     }
     classificationMltParameters.setFieldNames(fieldNamesWithNoBoost.toArray(textFieldNames));
-    mltQuery.add(mlt.like(document), BooleanClause.Occur.MUST);
+    mltQuery.add(mlt.like(document), BooleanClause.Occur.SHOULD);
 
     Query classFieldQuery = new WildcardQuery(new Term(classFieldName, "*"));
     mltQuery.add(new BooleanClause(classFieldQuery, BooleanClause.Occur.MUST));
