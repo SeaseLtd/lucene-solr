@@ -17,6 +17,7 @@
 package org.apache.lucene.queries.mlt;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.util.Collection;
 
 import org.apache.lucene.document.Document;
@@ -161,15 +162,15 @@ public final class MoreLikeThis {
   public Query like(int docNum) throws IOException {
     String[] fieldNames = params.getFieldNames();
     initMoreLikeThisQueryFieldsIfEmpty(fieldNames);
-    PriorityQueue<ScoredTerm> scoredTerms = indexedDocumentTermsRetriever.retrieveTermsFromIndexedDocument(docNum);
+    PriorityQueue<ScoredTerm> interestingTerms = indexedDocumentTermsRetriever.retrieveTermsFromIndexedDocument(docNum);
 
-    return queryBuilder.createQuery(scoredTerms);
+    return queryBuilder.createQuery(interestingTerms);
   }
 
   public Query like(Document luceneDocument) throws IOException {
     initMoreLikeThisQueryFieldsIfEmpty(params.getFieldNames());
-    PriorityQueue<ScoredTerm> scoredTerms = luceneDocumentTermsRetriever.retrieveTermsFromDocument(luceneDocument);
-    return queryBuilder.createQuery(scoredTerms);
+    PriorityQueue<ScoredTerm> interestingTerms = luceneDocumentTermsRetriever.retrieveTermsFromDocument(luceneDocument);
+    return queryBuilder.createQuery(interestingTerms);
   }
 
   public Query like(String fieldName, String... seedText) throws IOException {
@@ -178,6 +179,17 @@ public final class MoreLikeThis {
     Document luceneDocument = new Document();
     for (String seedTextValue : seedText) {
       luceneDocument.add(new TextField(fieldName, seedTextValue, Field.Store.YES));
+    }
+
+    return this.like(luceneDocument);
+  }
+
+  public Query like(String fieldName, Reader... readers) throws IOException {
+    initMoreLikeThisQueryFieldsIfEmpty(params.getFieldNames());
+
+    Document luceneDocument = new Document();
+    for (Reader seedTextValue : readers) {
+      luceneDocument.add(new TextField(fieldName, seedTextValue));
     }
 
     return this.like(luceneDocument);

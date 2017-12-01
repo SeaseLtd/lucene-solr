@@ -18,6 +18,7 @@
 package org.apache.lucene.queries.mlt.terms;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -86,6 +87,8 @@ public abstract class InterestingTermsRetriever {
         }
         analysedTextStream.end();
       }
+    } else if(field.readerValue()!=null){
+      Reader fieldContent = field.readerValue();
     }
   }
 

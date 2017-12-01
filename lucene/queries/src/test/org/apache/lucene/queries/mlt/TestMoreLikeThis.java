@@ -17,6 +17,7 @@
 package org.apache.lucene.queries.mlt;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -108,12 +109,10 @@ public class TestMoreLikeThis extends LuceneTestCase {
     // this mean that every term boost factor will be multiplied by this
     // number
     float boostFactor = 5;
-    Map<String, Float> fieldToBoost = new HashMap<>();
-    fieldToBoost.put("text", boostFactor);
-    params.setFieldToQueryTimeBoostFactor(fieldToBoost);
+    params.setQueryTimeBoostFactor(boostFactor);
 
-    BooleanQuery query = (BooleanQuery) mlt.like("text",
-        "lucene release");
+    BooleanQuery query = (BooleanQuery) mlt.like("text", new StringReader(
+        "lucene release"));
     Collection<BooleanClause> clauses = query.clauses();
     
     assertEquals("Expected " + originalValues.size() + " clauses.",
@@ -145,8 +144,8 @@ public class TestMoreLikeThis extends LuceneTestCase {
     params.enableBoost(true);
     MoreLikeThis mlt = new MoreLikeThis(reader, params);
 
-    BooleanQuery query = (BooleanQuery) mlt.like("text",
-        "lucene release");
+    BooleanQuery query = (BooleanQuery) mlt.like("text", new StringReader(
+        "lucene release"));
     Collection<BooleanClause> clauses = query.clauses();
 
     for (BooleanClause clause : clauses) {
@@ -185,8 +184,8 @@ public class TestMoreLikeThis extends LuceneTestCase {
     MoreLikeThis mlt = new MoreLikeThis(reader, params);
 
     BooleanQuery query = (BooleanQuery) mlt.like("text",
-        "lucene", "lucene release",
-        "apache", "apache lucene");
+        new StringReader("lucene"), new StringReader("lucene release"),
+        new StringReader("apache"), new StringReader("apache lucene"));
     Collection<BooleanClause> clauses = query.clauses();
     assertEquals("Expected 2 clauses only!", 2, clauses.size());
     for (BooleanClause clause : clauses) {
@@ -233,7 +232,7 @@ public class TestMoreLikeThis extends LuceneTestCase {
     for (String text : generateStrSeq(0, numDocs)) {
       likeText += text + " ";
     }
-    BooleanQuery query = (BooleanQuery) mlt.like("text", likeText);
+    BooleanQuery query = (BooleanQuery) mlt.like("text", new StringReader(likeText));
 
     // check best terms are topN of highest idf
     Collection<BooleanClause> clauses = query.clauses();
