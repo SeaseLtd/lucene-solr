@@ -56,40 +56,47 @@ public abstract class InterestingTermsRetriever {
       throws IOException {
     String fieldName = field.name();
     String fieldStringContent = field.stringValue();
+    Reader fieldReaderContent = field.readerValue();
+
+    Analyzer analyzer = parameters.getAnalyzer();
+    if(parameters.getFieldToAnalyzer()!=null && parameters.getFieldToAnalyzer().get(fieldName)!=null){
+      analyzer = parameters.getFieldToAnalyzer().get(fieldName);
+    }
+    final int maxNumTokensParsed = parameters.getMaxNumTokensParsed();
+
+    if (analyzer == null) {
+      throw new UnsupportedOperationException("To use MoreLikeThis without " +
+          "term vectors, you must provide an Analyzer");
+    }
 
     if (fieldStringContent != null) {
-      Analyzer analyzer = parameters.getAnalyzer();
-      if(parameters.getFieldToAnalyzer()!=null && parameters.getFieldToAnalyzer().get(fieldName)!=null){
-        analyzer = parameters.getFieldToAnalyzer().get(fieldName);
+      try (TokenStream analysedTextStream= analyzer.tokenStream(fieldName, fieldStringContent)) {
+        processTokenStream(perFieldTermFrequencies, fieldName, maxNumTokensParsed, analysedTextStream);
       }
-      final int maxNumTokensParsed = parameters.getMaxNumTokensParsed();
-
-      if (analyzer == null) {
-        throw new UnsupportedOperationException("To use MoreLikeThis without " +
-            "term vectors, you must provide an Analyzer");
+    }else if(fieldReaderContent!=null){
+      try (TokenStream analysedTextStream= analyzer.tokenStream(fieldName, fieldReaderContent)) {
+        processTokenStream(perFieldTermFrequencies, fieldName, maxNumTokensParsed, analysedTextStream);
       }
-
-      try (TokenStream analysedTextStream = analyzer.tokenStream(fieldName, fieldStringContent)) {
-        int tokenCount = 0;
-        // for every token
-        CharTermAttribute termAtt = analysedTextStream.addAttribute(CharTermAttribute.class);
-        analysedTextStream.reset();
-        while (analysedTextStream.incrementToken()) {
-          String word = termAtt.toString();
-          tokenCount++;
-          if (tokenCount > maxNumTokensParsed) {
-            break;
-          }
-          if (isNoiseWord(word)) {
-            continue;
-          }
-          perFieldTermFrequencies.increment(fieldName,word,1);
-        }
-        analysedTextStream.end();
-      }
-    } else if(field.readerValue()!=null){
-      Reader fieldContent = field.readerValue();
     }
+  }
+
+  private void processTokenStream(DocumentTermFrequencies perFieldTermFrequencies, String fieldName, int maxNumTokensParsed, TokenStream analysedTextStream) throws IOException {
+    int tokenCount = 0;
+    // for every token
+    CharTermAttribute termAtt = analysedTextStream.addAttribute(CharTermAttribute.class);
+    analysedTextStream.reset();
+    while (analysedTextStream.incrementToken()) {
+      String word = termAtt.toString();
+      tokenCount++;
+      if (tokenCount > maxNumTokensParsed) {
+        break;
+      }
+      if (isNoiseWord(word)) {
+        continue;
+      }
+      perFieldTermFrequencies.increment(fieldName,word,1);
+    }
+    analysedTextStream.end();
   }
 
   /**
