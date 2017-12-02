@@ -130,10 +130,6 @@ public class KNearestNeighborDocumentClassifier extends KNearestNeighborClassifi
       fieldNamesWithNoBoost.add(fieldName);
       classificationMltParameters.enableBoost(true); // we want always to use the boost coming from TF * IDF of the term
       if (boost != null) {
-        if(fieldToQueryTimeBoostFactor == null){
-          fieldToQueryTimeBoostFactor = new HashMap<>();
-          classificationMltParameters.setFieldToQueryTimeBoostFactor(fieldToQueryTimeBoostFactor);
-        }
         fieldToQueryTimeBoostFactor.put(fieldName,Float.parseFloat(boost)); // this is an additional multiplicative boost coming from the field boost
       }
     }

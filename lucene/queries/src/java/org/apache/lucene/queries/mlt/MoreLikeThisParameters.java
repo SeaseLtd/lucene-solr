@@ -16,6 +16,7 @@
  */
 package org.apache.lucene.queries.mlt;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -112,7 +113,7 @@ public final class MoreLikeThisParameters {
    * Advanced :
    * Pass a specific Analyzer per field
    */
-  private Map<String,Analyzer> fieldToAnalyzer = null;
+  private Map<String, Analyzer> fieldToAnalyzer = null;
 
   /**
    * Ignore words less frequent that this.
@@ -145,7 +146,7 @@ public final class MoreLikeThisParameters {
   /**
    * Boost factor per field, it overrides the generic queryTimeBoostFactor.
    */
-  private Map<String,Float> fieldToQueryTimeBoostFactor = null;
+  private Map<String, Float> fieldToQueryTimeBoostFactor = null;
 
   /**
    * Field name we'll analyze.
@@ -181,26 +182,29 @@ public final class MoreLikeThisParameters {
     this.queryTimeBoostFactor = queryTimeBoostFactor;
   }
 
-   public Map<String, Float> getFieldToQueryTimeBoostFactor() {
-     return fieldToQueryTimeBoostFactor;
-   }
+  public Map<String, Float> getFieldToQueryTimeBoostFactor() {
+    if (fieldToQueryTimeBoostFactor == null) {
+      fieldToQueryTimeBoostFactor = new HashMap<>();
+    }
+    return fieldToQueryTimeBoostFactor;
+  }
 
   public float getPerFieldQueryTimeBoost(String fieldName) {
     float queryTimeBoost = queryTimeBoostFactor;
-    if(fieldToQueryTimeBoostFactor !=null){
+    if (fieldToQueryTimeBoostFactor != null) {
       Float currentFieldQueryTimeBoost = fieldToQueryTimeBoostFactor.get(fieldName);
-      if(currentFieldQueryTimeBoost!=null){
+      if (currentFieldQueryTimeBoost != null) {
         queryTimeBoost = currentFieldQueryTimeBoost;
       }
     }
     return queryTimeBoost;
   }
 
-   public void setFieldToQueryTimeBoostFactor(Map<String, Float> fieldToQueryTimeBoostFactor) {
-     this.fieldToQueryTimeBoostFactor = fieldToQueryTimeBoostFactor;
-   }
+  public void setFieldToQueryTimeBoostFactor(Map<String, Float> fieldToQueryTimeBoostFactor) {
+    this.fieldToQueryTimeBoostFactor = fieldToQueryTimeBoostFactor;
+  }
 
-   /**
+  /**
    * Returns an analyzer that will be used to parse source doc with. The default analyzer
    * is not set.
    *
@@ -254,7 +258,7 @@ public final class MoreLikeThisParameters {
    * many docs. The default frequency is {@link #DEFAULT_MIN_DOC_FREQ}.
    *
    * @return the frequency at which words will be ignored which do not occur in at least this
-   *         many docs.
+   * many docs.
    */
   public int getMinDocFreq() {
     return minDocFreq;
@@ -265,7 +269,7 @@ public final class MoreLikeThisParameters {
    * many docs.
    *
    * @param minDocFreq the frequency at which words will be ignored which do not occur in at
-   * least this many docs.
+   *                   least this many docs.
    */
   public void setMinDocFreq(int minDocFreq) {
     this.minDocFreq = minDocFreq;
@@ -277,7 +281,7 @@ public final class MoreLikeThisParameters {
    * {@link #DEFAULT_MAX_DOC_FREQ}.
    *
    * @return get the maximum frequency at which words are still allowed,
-   *         words which occur in more docs than this are ignored.
+   * words which occur in more docs than this are ignored.
    */
   public int getMaxDocFreq() {
     return maxDocFreq;
@@ -288,7 +292,7 @@ public final class MoreLikeThisParameters {
    * in more than this many docs will be ignored.
    *
    * @param maxFreq the maximum count of documents that a term may appear
-   * in to be still considered relevant
+   *                in to be still considered relevant
    */
   public void setMaxDocFreq(int maxFreq) {
     this.maxDocFreq = maxFreq;
@@ -299,7 +303,7 @@ public final class MoreLikeThisParameters {
    * in more than this many percent of all docs will be ignored.
    *
    * @param maxPercentage the maximum percentage of documents (0-100) that a term may appear
-   * in to be still considered relevant
+   *                      in to be still considered relevant
    */
   public void setMaxDocFreqPct(IndexReader ir, int maxPercentage) {
     this.maxDocFreq = maxPercentage * ir.numDocs() / 100;
@@ -343,7 +347,7 @@ public final class MoreLikeThisParameters {
    * provided in the constructor.
    *
    * @param fieldNames the field names that will be used when generating the 'More Like This'
-   * query.
+   *                   query.
    */
   public void setFieldNames(String[] fieldNames) {
     this.fieldNames = fieldNames;
@@ -424,7 +428,7 @@ public final class MoreLikeThisParameters {
    * Sets the maximum number of query terms that will be included in any generated query.
    *
    * @param maxQueryTerms the maximum number of query terms that will be included in any
-   * generated query.
+   *                      generated query.
    */
   public void setMaxQueryTerms(int maxQueryTerms) {
     this.maxQueryTerms = maxQueryTerms;
