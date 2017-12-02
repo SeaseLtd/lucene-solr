@@ -19,7 +19,7 @@ package org.apache.lucene.classification.document;
 
 import java.io.IOException;
 import java.io.StringReader;
-import java.util.Collection;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -113,9 +113,38 @@ public class KNearestNeighborDocumentClassifier extends KNearestNeighborClassifi
    * @return the top results for the MLT query
    * @throws IOException If there is a low-level I/O error
    */
-  protected TopDocs knnSearch(Document document) throws IOException {
+  private TopDocs knnSearch(Document document) throws IOException {
     MoreLikeThisParameters classificationMltParameters = mlt.getParameters();
     classificationMltParameters.setFieldToAnalyzer(field2analyzer);
-    return super.knnSearch(document);
+    BooleanQuery.Builder mltQuery = new BooleanQuery.Builder();
+    Map<String, Float> fieldToQueryTimeBoostFactor = classificationMltParameters.getFieldToQueryTimeBoostFactor();
+    ArrayList<String> fieldNamesWithNoBoost = new ArrayList<>();
+
+    for (String fieldName : textFieldNames) {
+      String boost = null;
+      if (fieldName.contains("^")) {
+        String[] field2boost = fieldName.split("\\^");
+        fieldName = field2boost[0];
+        boost = field2boost[1];
+      }
+      fieldNamesWithNoBoost.add(fieldName);
+      classificationMltParameters.enableBoost(true); // we want always to use the boost coming from TF * IDF of the term
+      if (boost != null) {
+        if(fieldToQueryTimeBoostFactor == null){
+          fieldToQueryTimeBoostFactor = new HashMap<>();
+          classificationMltParameters.setFieldToQueryTimeBoostFactor(fieldToQueryTimeBoostFactor);
+        }
+        fieldToQueryTimeBoostFactor.put(fieldName,Float.parseFloat(boost)); // this is an additional multiplicative boost coming from the field boost
+      }
+    }
+    classificationMltParameters.setFieldNames(fieldNamesWithNoBoost.toArray(textFieldNames));
+    mltQuery.add(mlt.like(document), BooleanClause.Occur.SHOULD);
+
+    Query classFieldQuery = new WildcardQuery(new Term(classFieldName, "*"));
+    mltQuery.add(new BooleanClause(classFieldQuery, BooleanClause.Occur.MUST));
+    if (query != null) {
+      mltQuery.add(query, BooleanClause.Occur.MUST);
+    }
+    return indexSearcher.search(mltQuery.build(), k);
   }
 }
