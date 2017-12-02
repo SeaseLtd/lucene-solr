@@ -55,10 +55,11 @@ public class MoreLikeThisQueryBuilder {
       if (parameters.isBoostEnabled()) {
         float currentScore = (interestingTerm.score);
         if (minScore == -1) {
-          float fieldBoost = parameters.getQueryTimeBoostFactor();
+          float fieldBoost = parameters.getPerFieldQueryTimeBoost(interestingTerm.field);
           minScore = currentScore/fieldBoost; // boost was already applied when finding interesting terms so must be removed
         }
-        interestingTermQuery = new BoostQuery(interestingTermQuery, currentScore / minScore);
+        float normalisedTermBoost = currentScore / minScore;
+        interestingTermQuery = new BoostQuery(interestingTermQuery, normalisedTermBoost);
       }
 
       try {

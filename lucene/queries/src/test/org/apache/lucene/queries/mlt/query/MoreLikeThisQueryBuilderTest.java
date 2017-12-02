@@ -87,7 +87,7 @@ public class MoreLikeThisQueryBuilderTest extends MoreLikeThisTestBase {
 
     Query query = builderToTest.createQuery(interestingTerms);
     //boost was already applied when extracting the interesting terms, to build the query it is ok to have it normalized
-    assertThat(query.toString(), is("(field2:term5)^1.0 (field1:term3)^3.0 (field1:term2)^4.0 (field1:term1)^5.0 (field2:term4)^7.0"));
+    assertThat(query.toString(), is("(field2:term5)^3.0 (field1:term3)^9.0 (field1:term2)^12.0 (field1:term1)^14.999999 (field2:term4)^20.999998"));
   }
 
   private PriorityQueue<ScoredTerm> buildInterestingTermsQueue() {
