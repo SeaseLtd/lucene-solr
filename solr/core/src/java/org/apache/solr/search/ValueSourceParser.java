@@ -27,7 +27,7 @@ import java.util.Map;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.queries.function.BoostedQuery;
+import org.apache.lucene.queries.function.FunctionScoreQuery;
 import org.apache.lucene.queries.function.FunctionValues;
 import org.apache.lucene.queries.function.ValueSource;
 import org.apache.lucene.queries.function.docvalues.BoolDocValues;
@@ -41,7 +41,7 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.spell.JaroWinklerDistance;
-import org.apache.lucene.search.spell.LevensteinDistance;
+import org.apache.lucene.search.spell.LevenshteinDistance;
 import org.apache.lucene.search.spell.NGramDistance;
 import org.apache.lucene.search.spell.StringDistance;
 import org.apache.lucene.util.BytesRefBuilder;
@@ -326,8 +326,7 @@ public abstract class ValueSourceParser implements NamedListInitializedPlugin {
       public ValueSource parse(FunctionQParser fp) throws SyntaxError {
         Query q = fp.parseNestedQuery();
         ValueSource vs = fp.parseValueSource();
-        BoostedQuery bq = new BoostedQuery(q, vs);
-        return new QueryValueSource(bq, 0.0f);
+        return new QueryValueSource(FunctionScoreQuery.boostByValue(q, vs.asDoubleValuesSource()), 0.0f);
       }
     });
     addParser("joindf", new ValueSourceParser() {
@@ -406,7 +405,7 @@ public abstract class ValueSourceParser implements NamedListInitializedPlugin {
         if (distClass.equalsIgnoreCase("jw")) {
           dist = new JaroWinklerDistance();
         } else if (distClass.equalsIgnoreCase("edit")) {
-          dist = new LevensteinDistance();
+          dist = new LevenshteinDistance();
         } else if (distClass.equalsIgnoreCase("ngram")) {
           int ngram = 2;
           if (fp.hasMoreArguments()) {

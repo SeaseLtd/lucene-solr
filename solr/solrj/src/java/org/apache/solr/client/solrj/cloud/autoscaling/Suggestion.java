@@ -18,9 +18,11 @@
 package org.apache.solr.client.solrj.cloud.autoscaling;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,11 +36,12 @@ import org.apache.solr.common.cloud.rule.ImplicitSnitch;
 import org.apache.solr.common.util.Pair;
 import org.apache.solr.common.util.StrUtils;
 
+import static java.util.Collections.unmodifiableSet;
 import static org.apache.solr.client.solrj.cloud.autoscaling.Policy.ANY;
 import static org.apache.solr.common.params.CollectionParams.CollectionAction.MOVEREPLICA;
 
 public class Suggestion {
-  static final String coreidxsize = "INDEX.sizeInBytes";
+  public static final String coreidxsize = "INDEX.sizeInBytes";
   static final Map<String, ConditionType> validatetypes = new HashMap<>();
 
   public static ConditionType getTagType(String name) {
@@ -224,7 +227,13 @@ public class Suggestion {
       public void getSuggestions(SuggestionCtx ctx) {
         perNodeSuggestions(ctx);
       }
-    },;
+    },
+    DISKTYPE(ImplicitSnitch.DISKTYPE, String.class, unmodifiableSet(new HashSet(Arrays.asList("ssd", "rotational"))), null, null, null) {
+      @Override
+      public void getSuggestions(SuggestionCtx ctx) {
+        perNodeSuggestions(ctx);
+      }
+    };
 
     final Class type;
     final Set<String> vals;
@@ -270,6 +279,7 @@ public class Suggestion {
     }
 
     public Object validate(String name, Object val, boolean isRuleVal) {
+      if (name == null) name = this.tagName;
       if (type == Double.class) {
         Double num = Clause.parseDouble(name, val);
         if (isRuleVal) {

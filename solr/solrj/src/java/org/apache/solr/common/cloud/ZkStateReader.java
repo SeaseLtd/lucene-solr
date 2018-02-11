@@ -17,9 +17,7 @@
 package org.apache.solr.common.cloud;
 
 import java.io.Closeable;
-import java.io.UnsupportedEncodingException;
 import java.lang.invoke.MethodHandles;
-import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -79,6 +77,7 @@ public class ZkStateReader implements Closeable {
   public static final String CORE_NODE_NAME_PROP = "core_node_name";
   public static final String ROLES_PROP = "roles";
   public static final String STATE_PROP = "state";
+  /**  SolrCore name. */
   public static final String CORE_NAME_PROP = "core";
   public static final String COLLECTION_PROP = "collection";
   public static final String ELECTION_NODE_PROP = "election_node";
@@ -89,6 +88,7 @@ public class ZkStateReader implements Closeable {
   public static final String SHARD_PARENT_PROP = "shard_parent";
   public static final String NUM_SHARDS_PROP = "numShards";
   public static final String LEADER_PROP = "leader";
+  public static final String SHARED_STORAGE_PROP = "shared_storage";
   public static final String PROPERTY_PROP = "property";
   public static final String PROPERTY_PROP_PREFIX = "property.";
   public static final String PROPERTY_VALUE_PROP = "property.value";
@@ -429,7 +429,7 @@ public class ZkStateReader implements Closeable {
     refreshLegacyClusterState(new LegacyClusterStateWatcher());
     refreshStateFormat2Collections();
     refreshCollectionList(new CollectionsChildWatcher());
-    refreshAliases(aliasesHolder);
+    refreshAliases(aliasesManager);
 
     if (securityNodeListener != null) {
       addSecuritynodeWatcher(pair -> {
@@ -948,21 +948,7 @@ public class ZkStateReader implements Closeable {
    * @lucene.experimental
    */
   public String getBaseUrlForNodeName(final String nodeName) {
-    return getBaseUrlForNodeName(nodeName, getClusterProperty(URL_SCHEME, "http"));
-  }
-
-  public static String getBaseUrlForNodeName(final String nodeName, String urlScheme) {
-    final int _offset = nodeName.indexOf("_");
-    if (_offset < 0) {
-      throw new IllegalArgumentException("nodeName does not contain expected '_' separator: " + nodeName);
-    }
-    final String hostAndPort = nodeName.substring(0,_offset);
-    try {
-      final String path = URLDecoder.decode(nodeName.substring(1+_offset), "UTF-8");
-      return urlScheme + "://" + hostAndPort + (path.isEmpty() ? "" : ("/" + path));
-    } catch (UnsupportedEncodingException e) {
-      throw new IllegalStateException("JVM Does not seem to support UTF-8", e);
-    }
+    return Utils.getBaseUrlForNodeName(nodeName, getClusterProperty(URL_SCHEME, "http"));
   }
 
   /** Watches a single collection's format2 state.json. */
@@ -1428,7 +1414,7 @@ public class ZkStateReader implements Closeable {
   //
 
   /** Access to the {@link Aliases}. */
-  public final AliasesManager aliasesHolder = new AliasesManager();
+  public final AliasesManager aliasesManager = new AliasesManager();
 
   /**
    * Get an immutable copy of the present state of the aliases. References to this object should not be retained
@@ -1437,7 +1423,7 @@ public class ZkStateReader implements Closeable {
    * @return The current aliases, Aliases.EMPTY if not solr cloud, or no aliases have existed yet. Never returns null.
    */
   public Aliases getAliases() {
-    return aliasesHolder.getAliases();
+    return aliasesManager.getAliases();
   }
 
   // called by createClusterStateWatchersAndUpdate()
@@ -1446,7 +1432,7 @@ public class ZkStateReader implements Closeable {
       constructState(Collections.emptySet());
       zkClient.exists(ALIASES, watcher, true);
     }
-    aliasesHolder.update();
+    aliasesManager.update();
   }
 
   /**
@@ -1472,7 +1458,8 @@ public class ZkStateReader implements Closeable {
      */
     public void applyModificationAndExportToZk(UnaryOperator<Aliases> op) {
       final long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-      int triesLeft = 5;
+      // note: triesLeft tuning is based on ConcurrentCreateRoutedAliasTest
+      int triesLeft = 30;
       while (triesLeft > 0) {
         triesLeft--;
         // we could synchronize on "this" but there doesn't seem to be a point; we have a retry loop.

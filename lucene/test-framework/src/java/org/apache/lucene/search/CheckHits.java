@@ -126,8 +126,8 @@ public class CheckHits {
     }
     
     @Override
-    public boolean needsScores() {
-      return false;
+    public ScoreMode scoreMode() {
+      return ScoreMode.COMPLETE_NO_SCORES;
     }
   }
 
@@ -316,7 +316,7 @@ public class CheckHits {
                                        float score,
                                        boolean deep,
                                        Explanation expl) {
-    float value = expl.getValue();
+    float value = expl.getValue().floatValue();
     // TODO: clean this up if we use junit 5 (the assert message is costly)
     try {
       Assert.assertEquals(score, value, 0d);
@@ -336,7 +336,7 @@ public class CheckHits {
       Assert.assertTrue("Child doc explanations are missing", detail.length > 0);
     }
     if (detail.length > 0) {
-      if (detail.length==1) {
+      if (detail.length==1 && COMPUTED_FROM_PATTERN.matcher(descr).matches() == false) {
         // simple containment, unless it's a freq of: (which lets a query explain how the freq is calculated), 
         // just verify contained expl has same score
         if (expl.getDescription().endsWith("with freq of:") == false
@@ -382,7 +382,7 @@ public class CheckHits {
         float max = Float.NEGATIVE_INFINITY;
         double maxError = 0;
         for (int i=0; i<detail.length; i++) {
-          float dval = detail[i].getValue();
+          float dval = detail[i].getValue().floatValue();
           verifyExplanation(q,doc,dval,deep,detail[i]);
           product *= dval;
           sum += dval;
@@ -515,8 +515,8 @@ public class CheckHits {
     }
     
     @Override
-    public boolean needsScores() {
-      return true;
+    public ScoreMode scoreMode() {
+      return ScoreMode.COMPLETE;
     }
   }
 
