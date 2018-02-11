@@ -30,19 +30,15 @@ public class ScoredTerm {
   public String field;
   public float score;
 
-  public Similarity.SimWeight stats;
-
-  public ScoredTerm(String term, String field, float score, Similarity.SimWeight stats ) {
+  public ScoredTerm(String term, String field, float score) {
     this.term = term;
     this.field = field;
     this.score = score;
-    this.stats = stats;
   }
 
-  public void update(String term, String field, float score, Similarity.SimWeight stats) {
+  public void update(String term, String field, float score) {
     this.term = term;
     this.field = field;
     this.score = score;
-    this.stats = stats;
   }
 }

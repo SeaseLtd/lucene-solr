@@ -91,12 +91,12 @@ public class MoreLikeThisQueryBuilderTest extends MoreLikeThisTestBase {
   }
 
   private PriorityQueue<ScoredTerm> buildInterestingTermsQueue() {
-    ScoredTerm term1 = new ScoredTerm("term1", "field1", 0.5f, null);
-    ScoredTerm term2 = new ScoredTerm("term2", "field1", 0.4f, null);
-    ScoredTerm term3 = new ScoredTerm("term3", "field1", 0.3f, null);
+    ScoredTerm term1 = new ScoredTerm("term1", "field1", 0.5f);
+    ScoredTerm term2 = new ScoredTerm("term2", "field1", 0.4f);
+    ScoredTerm term3 = new ScoredTerm("term3", "field1", 0.3f);
 
-    ScoredTerm term4 = new ScoredTerm("term4", "field2", 0.7f, null);
-    ScoredTerm term5 = new ScoredTerm("term5", "field2", 0.1f, null);
+    ScoredTerm term4 = new ScoredTerm("term4", "field2", 0.7f);
+    ScoredTerm term5 = new ScoredTerm("term5", "field2", 0.1f);
 
     FreqQ queue = new FreqQ(5);
     queue.add(term1);

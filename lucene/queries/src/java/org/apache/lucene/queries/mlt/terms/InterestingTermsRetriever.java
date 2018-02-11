@@ -143,15 +143,13 @@ public abstract class InterestingTermsRetriever {
         // Boost should affect which terms ends up to be interesting
         score = fieldBoost * score;
 
-        Similarity.SimWeight currentSimilarityStats = interestingTermsScorer.getSimilarityStats(fieldName, fieldStats, currentTermStat, tf);
-
         if (interestingTerms.size() < queueSize) {
           // there is still space in the interestingTerms
-          interestingTerms.add(new ScoredTerm(word, fieldName, score, currentSimilarityStats));// there was idf, possibly we want the stats there
+          interestingTerms.add(new ScoredTerm(word, fieldName, score));// there was idf, possibly we want the stats there
         } else {
           ScoredTerm minScoredTerm = interestingTerms.top();
           if (minScoredTerm.score < score) { // current term deserve a space as it is more interesting than the top
-            minScoredTerm.update(word, fieldName, score, currentSimilarityStats);
+            minScoredTerm.update(word, fieldName, score);
             interestingTerms.updateTop();
           }
         }

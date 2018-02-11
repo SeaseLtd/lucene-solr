@@ -39,9 +39,4 @@ public class TFIDFScorer implements TermScorer {
     float score = localTermFrequency * idf;
     return score;
   }
-
-  public Similarity.SimWeight getSimilarityStats(String fieldName, CollectionStatistics globalFieldStats, TermStatistics globalTermStats, float localTermFrequency) throws IOException {
-    return similarity.computeWeight(1.0f, globalFieldStats, globalTermStats);
-  }
-
 }

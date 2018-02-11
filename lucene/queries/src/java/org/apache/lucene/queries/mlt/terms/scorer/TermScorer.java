@@ -33,7 +33,4 @@ import org.apache.lucene.search.similarities.Similarity;
  */
 public interface TermScorer {
   float score(String fieldName, CollectionStatistics globalFieldStats, TermStatistics globalTermStats, float localTermFrequency) throws IOException;
-
-  Similarity.SimWeight getSimilarityStats(String fieldName, CollectionStatistics globalFieldStats, TermStatistics globalTermStats, float localTermFrequency) throws IOException;
-
-  }
+}
