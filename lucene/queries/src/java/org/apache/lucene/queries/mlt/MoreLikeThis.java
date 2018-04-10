@@ -218,7 +218,7 @@ public final class MoreLikeThis {
       delim = ", ";
     }
     sb.append("\n");
-    sb.append("\t").append("boost          : ").append(params.isBoostEnabled()).append("\n");
+    sb.append("\t").append("boost          : ").append(params.getBoostConfiguration().isBoostEnabled()).append("\n");
     sb.append("\t").append("minTermFreq    : ").append(params.getMinTermFreq()).append("\n");
     sb.append("\t").append("minDocFreq     : ").append(params.getMinDocFreq()).append("\n");
     return sb.toString();

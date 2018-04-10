@@ -52,7 +52,8 @@ public class MoreLikeThisQueryBuilderTest extends MoreLikeThisTestBase {
   @Test
   public void boostOn_shouldBuildQueryWithDefaultBoost() throws Exception {
     MoreLikeThisParameters params = getDefaultParams();
-    params.enableBoost(true);
+    MoreLikeThisParameters.BoostProperties boostConfiguration = params.getBoostConfiguration();
+    boostConfiguration.setBoost(true);
     builderToTest = new MoreLikeThisQueryBuilder(params);
     PriorityQueue<ScoredTerm> interestingTerms = this.buildInterestingTermsQueue();
 
@@ -64,7 +65,7 @@ public class MoreLikeThisQueryBuilderTest extends MoreLikeThisTestBase {
   @Test
   public void boostOn_singleBoostAcrossFields_shouldBuildQueryPreservingTermsRelationAndBoost() throws Exception {
     MoreLikeThisParameters params = getDefaultParams();
-    params.enableBoost(true);
+    params.setBoost(true);
     params.setQueryTimeBoostFactor(2.0f);
     builderToTest = new MoreLikeThisQueryBuilder(params);
     PriorityQueue<ScoredTerm> interestingTerms = this.buildInterestingTermsQueue();
@@ -77,7 +78,7 @@ public class MoreLikeThisQueryBuilderTest extends MoreLikeThisTestBase {
   @Test
   public void boostOn_differentBoostAcrossFields_shouldBuildQueryPreservingTermsRelation() throws Exception {
     MoreLikeThisParameters params = getDefaultParams();
-    params.enableBoost(true);
+    params.setBoost(true);
     Map<String, Float> fieldToQueryTimeBoostFactor = new HashMap<>();
     fieldToQueryTimeBoostFactor.put("field1",2.0f);
     fieldToQueryTimeBoostFactor.put("field2",3.0f);

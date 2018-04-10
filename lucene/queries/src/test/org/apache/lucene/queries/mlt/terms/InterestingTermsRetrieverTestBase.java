@@ -155,11 +155,12 @@ public abstract class InterestingTermsRetrieverTestBase extends MoreLikeThisTest
     //More Like This parameters definition
     int topK = 26;
     MoreLikeThisParameters params = getDefaultParams();
+    MoreLikeThisParameters.BoostProperties boostConfiguration = params.getBoostConfiguration();
     params.setMaxQueryTerms(topK);
     params.setFieldNames(new String[]{FIELD1});
     Map<String, Float> testBoostFactor = new HashMap<>();
     testBoostFactor.put(FIELD2, 2.0f);
-    params.setFieldToQueryTimeBoostFactor(testBoostFactor);
+    boostConfiguration.setFieldToQueryTimeBoostFactor(testBoostFactor);
     //Test preparation
     PriorityQueue<ScoredTerm> scoredTerms = retrieveScoredTerms(params);
 
@@ -179,11 +180,12 @@ public abstract class InterestingTermsRetrieverTestBase extends MoreLikeThisTest
     //More Like This parameters definition
     int topK = 26;
     MoreLikeThisParameters params = getDefaultParams();
+    MoreLikeThisParameters.BoostProperties boostConfiguration = params.getBoostConfiguration();
     params.setMaxQueryTerms(topK);
     params.setFieldNames(new String[]{FIELD1, FIELD2});
     Map<String, Float> testBoostFactor = new HashMap<>();
     testBoostFactor.put(FIELD2, 2.0f);
-    params.setFieldToQueryTimeBoostFactor(testBoostFactor);
+    boostConfiguration.setFieldToQueryTimeBoostFactor(testBoostFactor);
     //Test preparation
     PriorityQueue<ScoredTerm> scoredTerms = retrieveScoredTerms(params);
 

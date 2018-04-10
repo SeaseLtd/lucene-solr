@@ -16,6 +16,7 @@
  */
 package org.apache.lucene.queries.mlt;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -131,24 +132,6 @@ public final class MoreLikeThisParameters {
   private int maxDocFreq = DEFAULT_MAX_DOC_FREQ;
 
   /**
-   * If enabled a queryTimeBoostFactor will applied to each query term.
-   * This queryTimeBoostFactor is the term score.
-   * More the term is considered interesting, stronger the queryTimeBoost
-   */
-  private boolean boostEnabled = false;
-
-  /**
-   * Generic queryTimeBoostFactor that will affect all the fields.
-   * This can be override specifying a boost factor per field.
-   */
-  private float queryTimeBoostFactor = 1.0f;
-
-  /**
-   * Boost factor per field, it overrides the generic queryTimeBoostFactor.
-   */
-  private Map<String, Float> fieldToQueryTimeBoostFactor = null;
-
-  /**
    * Field name we'll analyze.
    */
   private String[] fieldNames = DEFAULT_FIELD_NAMES;
@@ -173,35 +156,10 @@ public final class MoreLikeThisParameters {
    */
   private int maxQueryTerms = DEFAULT_MAX_QUERY_TERMS;
 
+  private BoostProperties boostConfiguration = new BoostProperties();
 
-  public float getQueryTimeBoostFactor() {
-    return queryTimeBoostFactor;
-  }
-
-  public void setQueryTimeBoostFactor(float queryTimeBoostFactor) {
-    this.queryTimeBoostFactor = queryTimeBoostFactor;
-  }
-
-  public Map<String, Float> getFieldToQueryTimeBoostFactor() {
-    if (fieldToQueryTimeBoostFactor == null) {
-      fieldToQueryTimeBoostFactor = new HashMap<>();
-    }
-    return fieldToQueryTimeBoostFactor;
-  }
-
-  public float getPerFieldQueryTimeBoost(String fieldName) {
-    float queryTimeBoost = queryTimeBoostFactor;
-    if (fieldToQueryTimeBoostFactor != null) {
-      Float currentFieldQueryTimeBoost = fieldToQueryTimeBoostFactor.get(fieldName);
-      if (currentFieldQueryTimeBoost != null) {
-        queryTimeBoost = currentFieldQueryTimeBoost;
-      }
-    }
-    return queryTimeBoost;
-  }
-
-  public void setFieldToQueryTimeBoostFactor(Map<String, Float> fieldToQueryTimeBoostFactor) {
-    this.fieldToQueryTimeBoostFactor = fieldToQueryTimeBoostFactor;
+  public BoostProperties getBoostConfiguration() {
+    return boostConfiguration;
   }
 
   /**
@@ -307,28 +265,6 @@ public final class MoreLikeThisParameters {
    */
   public void setMaxDocFreqPct(IndexReader ir, int maxPercentage) {
     this.maxDocFreq = maxPercentage * ir.numDocs() / 100;
-  }
-
-
-  /**
-   * Returns whether to boostEnabled terms in query based on "score" or not. The default is
-   * false.
-   *
-   * @return whether to boostEnabled terms in query based on "score" or not.
-   * @see #enableBoost
-   */
-  public boolean isBoostEnabled() {
-    return boostEnabled;
-  }
-
-  /**
-   * Sets whether to boostEnabled terms in query based on "score" or not.
-   *
-   * @param boostEnabled true to boostEnabled terms in query based on "score", false otherwise.
-   * @see #isBoostEnabled
-   */
-  public void enableBoost(boolean boostEnabled) {
-    this.boostEnabled = boostEnabled;
   }
 
   /**
@@ -447,6 +383,95 @@ public final class MoreLikeThisParameters {
    */
   public void setMaxNumTokensParsed(int i) {
     maxNumTokensParsed = i;
+  }
+
+  public class BoostProperties {
+    /**
+     * If enabled a queryTimeBoostFactor will applied to each query term.
+     * This queryTimeBoostFactor is the term score.
+     * More the term is considered interesting, stronger the queryTimeBoost
+     */
+    private boolean boostEnabled = false;
+
+    /**
+     * Generic queryTimeBoostFactor that will affect all the fields.
+     * This can be override specifying a boost factor per field.
+     */
+    private float queryTimeBoostFactor = 1.0f;
+
+    /**
+     * Boost factor per field, it overrides the generic queryTimeBoostFactor.
+     */
+    private Map<String, Float> fieldToQueryTimeBoostFactor = new HashMap<>();
+
+    public BoostProperties() {
+    }
+
+    public void addFieldWithBoost(String fieldAndBoost) {
+      String fieldName;
+      String boost;
+      if (fieldAndBoost.contains("^")) {
+        String[] field2boost = fieldAndBoost.split("\\^");
+        fieldName = field2boost[0];
+        boost = field2boost[1];
+        if (boost != null) {
+          fieldToQueryTimeBoostFactor.put(fieldName, Float.parseFloat(boost));
+        }
+      } else {
+        fieldToQueryTimeBoostFactor.put(fieldAndBoost, 1.0f);
+      }
+    }
+
+    public float getQueryTimeBoostFactor() {
+      return queryTimeBoostFactor;
+    }
+
+    public void setQueryTimeBoostFactor(float queryTimeBoostFactor) {
+      this.queryTimeBoostFactor = queryTimeBoostFactor;
+    }
+
+    public Map<String, Float> getFieldToQueryTimeBoostFactor() {
+      if (fieldToQueryTimeBoostFactor == null) {
+        fieldToQueryTimeBoostFactor = new HashMap<>();
+      }
+      return fieldToQueryTimeBoostFactor;
+    }
+
+    public float getPerFieldQueryTimeBoost(String fieldName) {
+      float queryTimeBoost = queryTimeBoostFactor;
+      if (fieldToQueryTimeBoostFactor != null) {
+        Float currentFieldQueryTimeBoost = fieldToQueryTimeBoostFactor.get(fieldName);
+        if (currentFieldQueryTimeBoost != null) {
+          queryTimeBoost = currentFieldQueryTimeBoost;
+        }
+      }
+      return queryTimeBoost;
+    }
+
+    public void setFieldToQueryTimeBoostFactor(Map<String, Float> fieldToQueryTimeBoostFactor) {
+      this.fieldToQueryTimeBoostFactor = fieldToQueryTimeBoostFactor;
+    }
+
+    /**
+     * Returns whether to boostEnabled terms in query based on "score" or not. The default is
+     * false.
+     *
+     * @return whether to boostEnabled terms in query based on "score" or not.
+     * @see #setBoost
+     */
+    public boolean isBoostEnabled() {
+      return boostEnabled;
+    }
+
+    /**
+     * Sets whether to boostEnabled terms in query based on "score" or not.
+     *
+     * @param boostEnabled true to boostEnabled terms in query based on "score", false otherwise.
+     * @see #isBoostEnabled
+     */
+    public void setBoost(boolean boostEnabled) {
+      this.boostEnabled = boostEnabled;
+    }
   }
 
 }

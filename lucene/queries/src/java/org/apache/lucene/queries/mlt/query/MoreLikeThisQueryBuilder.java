@@ -45,6 +45,7 @@ public class MoreLikeThisQueryBuilder {
   }
 
   public BooleanQuery createQuery(PriorityQueue<ScoredTerm> interestingTerms) {
+    final MoreLikeThisParameters.BoostProperties boostConfiguration = parameters.getBoostConfiguration();
     BooleanQuery.Builder moreLikeThisQuery = new BooleanQuery.Builder();
     ScoredTerm interestingTerm;
     float minScore = -1;
@@ -52,10 +53,10 @@ public class MoreLikeThisQueryBuilder {
     while ((interestingTerm = interestingTerms.pop()) != null) {
       Query interestingTermQuery = new TermQuery(new Term(interestingTerm.field, interestingTerm.term));
 
-      if (parameters.isBoostEnabled()) {
+      if (boostConfiguration.isBoostEnabled()) {
         float currentScore = (interestingTerm.score);
         if (minScore == -1) {
-          float fieldBoost = parameters.getPerFieldQueryTimeBoost(interestingTerm.field);
+          float fieldBoost = boostConfiguration.getPerFieldQueryTimeBoost(interestingTerm.field);
           minScore = currentScore/fieldBoost; // boost was already applied when finding interesting terms so must be removed
         }
         float normalisedTermBoost = currentScore / minScore;

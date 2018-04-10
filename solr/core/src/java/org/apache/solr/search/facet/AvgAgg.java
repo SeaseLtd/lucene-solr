@@ -29,7 +29,7 @@ public class AvgAgg extends SimpleAggValueSource {
 
   @Override
   public SlotAcc createSlotAcc(FacetContext fcontext, int numDocs, int numSlots) throws IOException {
-    return new AvgSlotAcc(getArg(), fcontext, numSlots);
+    return new AvgSlotAFSTcc(getArg(), fcontext, numSlots);
   }
 
   @Override

@@ -102,7 +102,7 @@ public class TestMoreLikeThis extends LuceneTestCase {
     params.setMinTermFreq(1);
     params.setMinWordLen(1);
     params.setFieldNames(new String[]{"text"});
-    params.enableBoost(true);
+    params.setBoost(true);
 
     MoreLikeThis mlt = new MoreLikeThis(reader, params);
     
@@ -141,7 +141,7 @@ public class TestMoreLikeThis extends LuceneTestCase {
     params.setMinTermFreq(1);
     params.setMinWordLen(1);
     params.setFieldNames(new String[]{"text"});
-    params.enableBoost(true);
+    params.setBoost(true);
     MoreLikeThis mlt = new MoreLikeThis(reader, params);
 
     BooleanQuery query = (BooleanQuery) mlt.like("text", new StringReader(

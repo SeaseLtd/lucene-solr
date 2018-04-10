@@ -33,7 +33,6 @@ import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.schema.SchemaField;
 import org.apache.solr.search.QParser;
 import org.apache.solr.search.QueryParsing;
-import org.apache.solr.search.QueryUtils;
 import org.apache.solr.search.SolrIndexSearcher;
 import org.apache.solr.util.SolrPluginUtils;
 
@@ -81,7 +80,7 @@ public class SimpleMLTQParser extends QParser {
       mltParams.setMaxDocFreq(localParams.getInt("maxdf", MoreLikeThisParameters.DEFAULT_MAX_DOC_FREQ));
       // what happens if value is explicitly set to false?
       if(localParams.get("boost") != null) {
-        mltParams.enableBoost(localParams.getBool("boost", false));
+        mltParams.setBoost(localParams.getBool("boost", false));
         boostFields = SolrPluginUtils.parseFieldBoosts(qf);
       }
 

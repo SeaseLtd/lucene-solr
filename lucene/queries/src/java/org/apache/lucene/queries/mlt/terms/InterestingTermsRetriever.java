@@ -109,12 +109,14 @@ public abstract class InterestingTermsRetriever {
     final int maxQueryTerms = parameters.getMaxQueryTerms();
     final int minDocFreq = parameters.getMinDocFreq();
     final int maxDocFreq = parameters.getMaxDocFreq();
+    final MoreLikeThisParameters.BoostProperties boostConfiguration = parameters.getBoostConfiguration();
     final int queueSize = Math.min(maxQueryTerms, this.getTotalTermsCount(perFieldTermFrequencies));
 
     FreqQ interestingTerms = new FreqQ(queueSize); // will order words by score
     for (DocumentTermFrequencies.FieldTermFrequencies fieldTermFrequencies : perFieldTermFrequencies.getAll()) {
       String fieldName = fieldTermFrequencies.getFieldName();
-      float fieldBoost = parameters.getPerFieldQueryTimeBoost(fieldName);
+
+      float fieldBoost = boostConfiguration.getPerFieldQueryTimeBoost(fieldName);
       CollectionStatistics fieldStats = new IndexSearcher(ir).collectionStatistics(fieldName);
       for (Map.Entry<String, DocumentTermFrequencies.Int> termFrequencyEntry : fieldTermFrequencies.getAll()) { // for every term
         String word = termFrequencyEntry.getKey();
