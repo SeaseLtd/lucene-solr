@@ -31,6 +31,7 @@ import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queries.mlt.MoreLikeThis;
+import org.apache.lucene.queries.mlt.MoreLikeThisParameters;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.IndexSearcher;
@@ -83,15 +84,15 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
   /**
    * Creates a {@link KNearestNeighborClassifier}.
    *
-   * @param indexReader     the reader on the index to be used for classification
+   * @param indexReader    the reader on the index to be used for classification
    * @param analyzer       an {@link Analyzer} used to analyze unseen text
    * @param similarity     the {@link Similarity} to be used by the underlying {@link IndexSearcher} or {@code null}
    *                       (defaults to {@link org.apache.lucene.search.similarities.BM25Similarity})
    * @param query          a {@link Query} to eventually filter the docs used for training the classifier, or {@code null}
    *                       if all the indexed docs should be used
    * @param k              the no. of docs to select in the MLT results to find the nearest neighbor
-   * @param minDocsFreq    {@link MoreLikeThis#minDocFreq} parameter
-   * @param minTermFreq    {@link MoreLikeThis#minTermFreq} parameter
+   * @param minDocsFreq    {@link MoreLikeThisParameters#minDocFreq} parameter
+   * @param minTermFreq    {@link MoreLikeThisParameters#minTermFreq} parameter
    * @param classFieldName the name of the field used as the output for the classifier
    * @param textFieldNames the name of the fields used as the inputs for the classifier, they can contain boosting indication e.g. title^10
    */
@@ -100,8 +101,10 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
     this.textFieldNames = textFieldNames;
     this.classFieldName = classFieldName;
     this.mlt = new MoreLikeThis(indexReader);
-    this.mlt.setAnalyzer(analyzer);
-    this.mlt.setFieldNames(textFieldNames);
+    MoreLikeThisParameters mltParameters = new MoreLikeThisParameters();
+    this.mlt.setParameters(mltParameters);
+    mltParameters.setAnalyzer(analyzer);
+    mltParameters.setFieldNames(textFieldNames);
     this.indexSearcher = new IndexSearcher(indexReader);
     if (similarity != null) {
       this.indexSearcher.setSimilarity(similarity);
@@ -109,10 +112,10 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
       this.indexSearcher.setSimilarity(new BM25Similarity());
     }
     if (minDocsFreq > 0) {
-      mlt.setMinDocFreq(minDocsFreq);
+      mltParameters.setMinDocFreq(minDocsFreq);
     }
     if (minTermFreq > 0) {
-      mlt.setMinTermFreq(minTermFreq);
+      mltParameters.setMinTermFreq(minTermFreq);
     }
     this.query = query;
     this.k = k;
@@ -158,20 +161,18 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
 
   private TopDocs knnSearch(String text) throws IOException {
     BooleanQuery.Builder mltQuery = new BooleanQuery.Builder();
+    MoreLikeThisParameters mltParams = mlt.getParameters();
+    MoreLikeThisParameters.BoostProperties boostConfiguration = mltParams.getBoostConfiguration();
     for (String fieldName : textFieldNames) {
-      String boost = null;
-      mlt.setBoost(true); //terms boost actually helps in MLT queries
-      if (fieldName.contains("^")) {
-        String[] field2boost = fieldName.split("\\^");
-        fieldName = field2boost[0];
-        boost = field2boost[1];
-      }
-      if (boost != null) {
-        mlt.setBoostFactor(Float.parseFloat(boost));//if we have a field boost, we add it
-      }
-      mltQuery.add(new BooleanClause(mlt.like(fieldName, new StringReader(text)), BooleanClause.Occur.SHOULD));
-      mlt.setBoostFactor(1);// restore neutral boost for next field
+      boostConfiguration.addFieldWithBoost(fieldName);
     }
+    Map<String, Float> fieldToQueryTimeBoostFactor = boostConfiguration.getFieldToQueryTimeBoostFactor();
+    for (String fieldName : fieldToQueryTimeBoostFactor.keySet()) {
+      Float fieldBoost = fieldToQueryTimeBoostFactor.get(fieldName);
+      boostConfiguration.setQueryTimeBoostFactor(fieldBoost);
+      mltQuery.add(new BooleanClause(mlt.like(fieldName, new StringReader(text)), BooleanClause.Occur.SHOULD));
+    }
+
     Query classFieldQuery = new WildcardQuery(new Term(classFieldName, "*"));
     mltQuery.add(new BooleanClause(classFieldQuery, BooleanClause.Occur.MUST));
     if (query != null) {
@@ -181,8 +182,10 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
   }
 
   //ranking of classes must be taken in consideration
+
   /**
    * build a list of classification results from search results
+   *
    * @param topDocs the search results as a {@link TopDocs} object
    * @return a {@link List} of {@link ClassificationResult}, one for each existing class
    * @throws IOException if it's not possible to get the stored value of class field
@@ -196,21 +199,21 @@ public class KNearestNeighborClassifier implements Classifier<BytesRef> {
       for (IndexableField singleStorableField : storableFields) {
         if (singleStorableField != null) {
           BytesRef cl = new BytesRef(singleStorableField.stringValue());
-        //update count
-        Integer count = classCounts.get(cl);
-        if (count != null) {
-          classCounts.put(cl, count + 1);
-        } else {
-          classCounts.put(cl, 1);
-        }
-        //update boost, the boost is based on the best score
-        Double totalBoost = classBoosts.get(cl);
-        double singleBoost = scoreDoc.score / maxScore;
-        if (totalBoost != null) {
-          classBoosts.put(cl, totalBoost + singleBoost);
-        } else {
-          classBoosts.put(cl, singleBoost);
-        }
+          //update count
+          Integer count = classCounts.get(cl);
+          if (count != null) {
+            classCounts.put(cl, count + 1);
+          } else {
+            classCounts.put(cl, 1);
+          }
+          //update boost, the boost is based on the best score
+          Double totalBoost = classBoosts.get(cl);
+          double singleBoost = scoreDoc.score / maxScore;
+          if (totalBoost != null) {
+            classBoosts.put(cl, totalBoost + singleBoost);
+          } else {
+            classBoosts.put(cl, singleBoost);
+          }
         }
       }
     }
